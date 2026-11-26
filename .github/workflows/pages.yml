@@ -23,8 +23,8 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html _site/
-          for f in og.png og.jpg; do [ -f "$f" ] && cp "$f" _site/ || true; done
-          [ -d docs ] && cp -r docs _site/ || true
+          for f in og.png og.jpg favicon.svg favicon.png; do [ -f "$f" ] && cp "$f" _site/ || true; done
+          for d in docs world src; do [ -d "$d" ] && cp -r "$d" _site/ || true; done
           touch _site/.nojekyll
       - name: Push to gh-pages
         run: |

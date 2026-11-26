@@ -1,0 +1,1336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Halcyon — an endless world, made of math</title>
+<meta name="description" content="An infinite, flyable 3D world rendered in real time from a single fragment shader. No images, no models, no libraries. Built by Claude.">
+<meta name="theme-color" content="#07090d">
+<meta property="og:title" content="Halcyon — an endless world, made of math">
+<meta property="og:description" content="Every mountain, wave, cloud and sunset is computed from scratch, every frame, in your browser. One HTML file. Zero assets. Built by Claude.">
+<style>
+  :root {
+    --ink: #f4f1ea;
+    --ink-dim: rgba(244, 241, 234, 0.62);
+    --ink-faint: rgba(244, 241, 234, 0.38);
+    --glass: rgba(12, 14, 20, 0.42);
+    --glass-strong: rgba(10, 12, 18, 0.72);
+    --line: rgba(255, 255, 255, 0.12);
+    --accent: #ffcf8a;
+    --clay: #d97757;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #07090d; color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif;
+    overflow: hidden; overscroll-behavior: none; -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;
+    touch-action: manipulation;
+  }
+  canvas#world {
+    position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block;
+    touch-action: none; cursor: grab; outline: none;
+  }
+  canvas#world.dragging { cursor: grabbing; }
+  .ui { transition: opacity 0.9s ease; }
+  body.hide-ui .ui { opacity: 0; pointer-events: none; }
+  body.idle .ui.fades { opacity: 0; pointer-events: none; }
+
+  /* title */
+  #title {
+    position: fixed; left: max(22px, env(safe-area-inset-left)); top: max(20px, env(safe-area-inset-top));
+    pointer-events: none; text-shadow: 0 1px 18px rgba(0,0,0,0.35);
+  }
+  #title h1 {
+    margin: 0; font-weight: 300; letter-spacing: 0.42em; font-size: 15px; text-transform: uppercase;
+  }
+  #title p { margin: 7px 0 0; font-size: 12.5px; color: var(--ink-dim); letter-spacing: 0.02em; max-width: 340px; line-height: 1.45; }
+
+  /* stats */
+  #stats {
+    position: fixed; right: max(18px, env(safe-area-inset-right)); top: max(18px, env(safe-area-inset-top));
+    font: 11px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--ink-dim);
+    text-align: right; pointer-events: none; text-shadow: 0 1px 10px rgba(0,0,0,0.5);
+    font-variant-numeric: tabular-nums;
+  }
+  #stats b { color: var(--ink); font-weight: 500; }
+
+  /* dock */
+  #dock {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: max(18px, env(safe-area-inset-bottom));
+    display: flex; align-items: center; gap: 6px; padding: 6px;
+    background: var(--glass); border: 1px solid var(--line); border-radius: 16px;
+    backdrop-filter: blur(18px) saturate(1.3); -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    max-width: calc(100vw - 24px);
+  }
+  #dock button, #dock label.btn {
+    appearance: none; border: 0; background: transparent; color: var(--ink);
+    font: 500 12.5px/1 inherit; font-family: inherit; padding: 10px 12px; border-radius: 11px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  }
+  #dock button:hover { background: rgba(255,255,255,0.08); }
+  #dock button:active { background: rgba(255,255,255,0.14); }
+  #dock button.on { background: rgba(255, 207, 138, 0.16); color: var(--accent); }
+  #dock svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  #dock .sep { width: 1px; align-self: stretch; margin: 6px 2px; background: var(--line); }
+  #time-wrap { display: flex; align-items: center; gap: 9px; padding: 0 8px 0 10px; }
+  #time-wrap span { font: 11.5px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-dim); width: 38px; font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 150px; height: 26px; background: transparent; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 4px;
+    background: linear-gradient(90deg, #0b1530 0%, #3b3f7a 18%, #ff9a5a 25%, #9fd0ff 40%, #bfe3ff 50%, #9fd0ff 60%, #ff8a4a 75%, #3b3f7a 82%, #0b1530 100%);
+  }
+  input[type=range]::-moz-range-track {
+    height: 4px; border-radius: 4px;
+    background: linear-gradient(90deg, #0b1530 0%, #3b3f7a 18%, #ff9a5a 25%, #9fd0ff 40%, #bfe3ff 50%, #9fd0ff 60%, #ff8a4a 75%, #3b3f7a 82%, #0b1530 100%);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.4);
+  }
+  input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #fff; }
+
+  /* credit */
+  #credit {
+    position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom));
+    font-size: 12px; color: var(--ink-dim); display: flex; align-items: center; gap: 8px;
+    text-decoration: none; padding: 6px 10px; border-radius: 10px;
+  }
+  #credit:hover { color: var(--ink); background: rgba(0,0,0,0.2); }
+  #credit .spark { width: 15px; height: 15px; color: var(--clay); }
+
+  /* hint */
+  #hint {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 66px);
+    font-size: 12px; color: var(--ink-dim); pointer-events: none; text-align: center;
+    text-shadow: 0 1px 12px rgba(0,0,0,0.6); transition: opacity 1.2s ease; white-space: nowrap;
+  }
+  #hint kbd {
+    font: 10.5px ui-monospace, Menlo, monospace; padding: 2px 5px; border-radius: 4px;
+    border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink);
+  }
+
+  /* panel */
+  #panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw);
+    background: var(--glass-strong); border-left: 1px solid var(--line);
+    backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
+    transform: translateX(102%); transition: transform 0.55s cubic-bezier(.2,.8,.2,1);
+    overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 28px 28px 60px;
+    padding-top: max(28px, env(safe-area-inset-top)); user-select: text; -webkit-user-select: text;
+  }
+  body.panel-open #panel { transform: none; }
+  #panel h2 { font-weight: 400; font-size: 21px; margin: 6px 0 6px; letter-spacing: -0.01em; }
+  #panel h3 { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin: 26px 0 8px; font-weight: 600; }
+  #panel p, #panel li { font-size: 13.5px; line-height: 1.62; color: rgba(244,241,234,0.82); }
+  #panel ul { padding-left: 18px; margin: 6px 0; }
+  #panel code { font: 12px ui-monospace, Menlo, monospace; background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+  #panel .lede { color: var(--ink-dim); font-size: 14px; }
+  #panel .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0 4px; }
+  #panel .fact { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  #panel .fact b { display: block; font-size: 22px; font-weight: 300; color: var(--ink); }
+  #panel .fact span { font-size: 11.5px; color: var(--ink-dim); }
+  #panel .close {
+    position: absolute; right: 16px; top: max(16px, env(safe-area-inset-top)); border: 0; background: rgba(255,255,255,0.08);
+    color: var(--ink); width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; line-height: 32px;
+  }
+  #panel a { color: var(--accent); }
+  #panel .sig { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-dim); }
+
+  /* loader */
+  #loader {
+    position: fixed; inset: 0; display: grid; place-items: center; background: #07090d; z-index: 10;
+    transition: opacity 1.6s ease;
+  }
+  #loader.gone { opacity: 0; pointer-events: none; }
+  #loader .inner { text-align: center; }
+  #loader h1 { font-weight: 300; letter-spacing: 0.5em; font-size: 18px; margin: 0 0 14px; text-transform: uppercase; padding-left: 0.5em; }
+  #loader p { color: var(--ink-faint); font-size: 12.5px; margin: 0; letter-spacing: 0.04em; }
+  #loader .bar { width: 160px; height: 1px; background: var(--line); margin: 22px auto 0; overflow: hidden; }
+  #loader .bar i { display: block; height: 100%; width: 40%; background: var(--ink); animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+  /* toast */
+  #toast {
+    position: fixed; left: 50%; top: max(22px, env(safe-area-inset-top)); transform: translate(-50%, -12px);
+    background: var(--glass-strong); border: 1px solid var(--line); padding: 10px 16px; border-radius: 12px;
+    font-size: 13px; opacity: 0; transition: opacity .35s ease, transform .35s ease; pointer-events: none;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); z-index: 5;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (max-width: 720px) {
+    #title p { display: none; }
+    #title h1 { font-size: 13px; }
+    #stats { font-size: 10px; }
+    #dock { bottom: max(12px, env(safe-area-inset-bottom)); gap: 2px; padding: 4px; }
+    #dock .lbl { display: none; }
+    #dock button { padding: 10px; }
+    input[type=range] { width: 110px; }
+    #time-wrap span { display: none; }
+    #credit { bottom: auto; top: max(44px, calc(env(safe-area-inset-top) + 26px)); left: max(14px, env(safe-area-inset-left)); right: auto; padding: 4px 8px; font-size: 11px; }
+    #hint { display: none; }
+    #panel { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(10, 12, 18, 0.96); }
+  }
+  #toast.tap { pointer-events: auto; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="world" tabindex="0" aria-label="A real-time rendered landscape"></canvas>
+
+<div id="loader"><div class="inner">
+  <h1>Halcyon</h1>
+  <p id="loader-msg">Compiling a world…</p>
+  <div class="bar"><i></i></div>
+</div></div>
+
+<div id="title" class="ui fades">
+  <h1>Halcyon</h1>
+  <p>An endless world, computed from nothing but math, sixty times a second. No images. No models. No libraries.</p>
+</div>
+
+<div id="stats" class="ui fades"></div>
+
+<div id="hint" class="ui">Drag to look &nbsp;·&nbsp; <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to fly &nbsp;·&nbsp; scroll for altitude &nbsp;·&nbsp; <kbd>H</kbd> hides everything</div>
+
+<div id="dock" class="ui fades" role="toolbar" aria-label="Controls">
+  <div id="time-wrap" title="Time of day">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <input id="time" type="range" min="0" max="1" step="0.0005" aria-label="Time of day">
+    <span id="clock">18:20</span>
+  </div>
+  <button id="btn-lapse" title="Timelapse (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg><span class="lbl">Timelapse</span></button>
+  <div class="sep"></div>
+  <button id="btn-new" title="New world (N)"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg><span class="lbl">New world</span></button>
+  <button id="btn-photo" title="Save a 4K wallpaper (P)"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span class="lbl">4K photo</span></button>
+  <button id="btn-share" title="Copy a link to this exact view"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span class="lbl">Share</span></button>
+  <div class="sep"></div>
+  <button id="btn-info" title="How it works (I)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg><span class="lbl">How it works</span></button>
+</div>
+
+<a id="credit" class="ui fades" href="https://github.com/jcorrea510/duettesting" target="_blank" rel="noopener">
+  <svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5l1.9 7.1 6.6-3.4-4.2 6.1 6.2 2.6-7.2.4 1.4 7.2-4.7-5.6-4.7 5.6 1.4-7.2-7.2-.4 6.2-2.6-4.2-6.1 6.6 3.4z"/></svg>
+  Built by Claude
+</a>
+
+<div id="toast"></div>
+
+<aside id="panel" class="ui" aria-label="How it works">
+  <button class="close" id="panel-close" aria-label="Close">×</button>
+  <h3 style="margin-top:4px">Under the hood</h3>
+  <h2>Every pixel is a question answered from scratch.</h2>
+  <p class="lede">There is no 3D model of this landscape anywhere. No textures, no photos, no game engine, no libraries. For every pixel on your screen, every frame, a small program running on your GPU asks: <i>"if I fire a ray of light from the camera through this pixel, what does it hit, and what color is it?"</i></p>
+  <div class="facts">
+    <div class="fact"><b id="f-size">—</b><span>the entire app, one HTML file</span></div>
+    <div class="fact"><b id="f-lines">—</b><span>lines of shader code draw the world</span></div>
+    <div class="fact"><b>0</b><span>images, models, or dependencies</span></div>
+    <div class="fact"><b>∞</b><span>the world never repeats or ends</span></div>
+  </div>
+
+  <h3>The ground: noise with memory</h3>
+  <p>The terrain is a height function <code>h(x, z)</code> built from 11 layers of gradient-aware value noise. Each layer also computes its own analytic derivatives, and steeper slopes suppress the finer layers above them. That one trick fakes millions of years of erosion: smooth valleys, sharp ridges, and the branching drainage you see in real mountains. A second, very slow noise decides where continents, islands, lagoons and open sea go.</p>
+
+  <h3>Finding the surface: ray marching</h3>
+  <p>The renderer can't "draw" a heightfield, so it walks each ray forward, step by step, checking how far above the ground it still is and taking larger strides when it's safe. Distant terrain is sampled with fewer noise layers (a level-of-detail scheme) so the horizon stays cheap.</p>
+
+  <h3>The sky is real physics</h3>
+  <p>Sky colors aren't hand-picked. A separate pass simulates sunlight scattering through a 60 km atmosphere around a 6,360 km planet: Rayleigh scattering (why the sky is blue and sunsets are red) and Mie scattering (the haze and glow around the sun). It integrates the light along each view ray and the shadowed path back to the sun, then bakes the result into a small lookup table every frame. The same table tints distant mountains with aerial perspective.</p>
+
+  <h3>Light and shadow</h3>
+  <ul>
+    <li><b>Soft shadows</b>: a second ray marches from each point toward the sun; how closely it grazes the terrain sets the penumbra.</li>
+    <li><b>Cloud shadows</b>: each point looks up through the drifting cloud layer, so shadows sweep across the hills.</li>
+    <li><b>Ambient occlusion</b>, sky light and bounce light from the ground.</li>
+    <li><b>Materials</b> come from slope, altitude and more noise: beaches, grass, forest, rock strata, and snow that only sticks to flat high ground.</li>
+  </ul>
+
+  <h3>Water</h3>
+  <p>The ocean knows how deep it is at every point, because the terrain function is evaluated underneath it. Light is absorbed per color channel by depth (red goes first), which is why shallow lagoons glow turquoise and deep water turns navy. Reflections use the Fresnel equations, the islands reflect into the sea with a second ray march, and foam gathers where waves touch the shore.</p>
+
+  <h3>Keeping it smooth</h3>
+  <p>The page measures its own frame rate and continuously adjusts internal resolution to hold it steady, from phones to desktops. The camera's autopilot runs the same terrain function in JavaScript to read the ground ahead, climb over ridges, and drift toward coastlines and mountains. The 4K photo button renders the frame again at higher quality in tiles, so even a phone can produce a full wallpaper.</p>
+
+  <p class="sig">Designed and written end to end by Claude, Anthropic's AI, as a single file. Seed <span id="f-seed">—</span>. <a href="https://github.com/jcorrea510/duettesting" target="_blank" rel="noopener">Read the source</a>.</p>
+</aside>
+
+<script>
+"use strict";
+/* =====================================================================
+   HALCYON — an endless world, made of math.
+   A single-file real-time renderer: WebGL2, two fragment shaders, no assets.
+   ===================================================================== */
+
+// ---------------------------------------------------------------------
+// Shared GLSL: hashing and noise (mirrored exactly in JavaScript below)
+// ---------------------------------------------------------------------
+const GLSL_COMMON = /* glsl */`#version 300 es
+precision highp float;
+precision highp int;
+#define PI 3.14159265359
+
+uniform uint uSeed;
+
+// integer hash -> [0,1]; stable on every GPU, no sin() precision problems
+float hash2(ivec2 p) {
+  uvec2 q = uvec2(p + ivec2(4194304));
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u) ^ (uSeed * 2654435761u);
+  n = (n ^ (n >> 16)) * 2246822519u;
+  n ^= n >> 13; n *= 3266489917u; n ^= n >> 16;
+  return float(n) * (1.0 / 4294967295.0);
+}
+
+// value noise with analytic derivatives: returns (value, d/dx, d/dy), value in [-1,1]
+vec3 noised(vec2 x) {
+  vec2 f = fract(x);
+  ivec2 i = ivec2(floor(x));
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  float a = hash2(i), b = hash2(i + ivec2(1, 0)), c = hash2(i + ivec2(0, 1)), d = hash2(i + ivec2(1, 1));
+  float k1 = b - a, k2 = c - a, k4 = a - b - c + d;
+  return vec3(-1.0 + 2.0 * (a + k1 * u.x + k2 * u.y + k4 * u.x * u.y),
+              2.0 * du * vec2(k1 + k4 * u.y, k2 + k4 * u.x));
+}
+float noise(vec2 x) { return noised(x).x; }
+`;
+
+// ---------------------------------------------------------------------
+// Pass 1: physically based sky, baked to a small lookup table
+// ---------------------------------------------------------------------
+const SKY_FS = GLSL_COMMON + /* glsl */`
+uniform vec3 uSun;
+uniform vec2 uLutRes;
+out vec4 outColor;
+
+const float Re = 6360e3, Ra = 6420e3;
+const vec3  betaR = vec3(5.5e-6, 13.0e-6, 22.4e-6);
+const float betaM = 21e-6, Hr = 7994.0, Hm = 1200.0, g = 0.78;
+
+vec2 raySphere(vec3 ro, vec3 rd, float r) {
+  float b = dot(ro, rd), c = dot(ro, ro) - r * r, h = b * b - c;
+  if (h < 0.0) return vec2(-1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+
+vec3 atmosphere(vec3 rd, vec3 sun) {
+  vec3 ro = vec3(0.0, Re + 400.0, 0.0);
+  float tmax = raySphere(ro, rd, Ra).y;
+  vec2 tg = raySphere(ro, rd, Re);
+  if (tg.x > 0.0) tmax = tg.x;
+  const int N = 20, NL = 8;
+  float seg = tmax / float(N), t = 0.0;
+  float odR = 0.0, odM = 0.0;
+  vec3 sumR = vec3(0.0), sumM = vec3(0.0);
+  for (int i = 0; i < N; i++) {
+    vec3 p = ro + rd * (t + seg * 0.5);
+    float h = length(p) - Re;
+    float hr = exp(-h / Hr) * seg, hm = exp(-h / Hm) * seg;
+    odR += hr; odM += hm;
+    float tl = raySphere(p, sun, Ra).y, segL = tl / float(NL), tL = 0.0;
+    float odRL = 0.0, odML = 0.0;
+    bool lit = true;
+    for (int j = 0; j < NL; j++) {
+      vec3 pl = p + sun * (tL + segL * 0.5);
+      float hl = length(pl) - Re;
+      if (hl < 0.0) { lit = false; break; }
+      odRL += exp(-hl / Hr) * segL; odML += exp(-hl / Hm) * segL;
+      tL += segL;
+    }
+    if (lit) {
+      vec3 tau = betaR * (odR + odRL) + betaM * 1.1 * (odM + odML);
+      vec3 att = exp(-tau);
+      sumR += att * hr; sumM += att * hm;
+    }
+    t += seg;
+  }
+  float mu = dot(rd, sun);
+  float pR = 3.0 / (16.0 * PI) * (1.0 + mu * mu);
+  float pM = 3.0 / (8.0 * PI) * ((1.0 - g * g) * (1.0 + mu * mu)) / ((2.0 + g * g) * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+  return 22.0 * (sumR * betaR * pR + sumM * betaM * pM);
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uLutRes;
+  float az = (uv.x - 0.5) * 2.0 * PI;
+  float s = uv.y * 2.0 - 1.0;
+  float el = sign(s) * s * s * PI * 0.5;
+  vec3 rd = vec3(cos(el) * sin(az), sin(el), cos(el) * cos(az));
+  vec3 c = atmosphere(rd, uSun);
+  outColor = vec4(c / (1.0 + c), 1.0);   // HDR -> [0,1) so it fits an 8-bit texture everywhere
+}
+`;
+
+// ---------------------------------------------------------------------
+// Pass 2: the world
+// ---------------------------------------------------------------------
+const WORLD_FS = GLSL_COMMON + /* glsl */`
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec3  uCamPos, uCamR, uCamU, uCamF;
+uniform float uFocal;
+uniform vec3  uSun;
+uniform vec3  uSunCol;
+uniform float uExposure;
+uniform int   uQuality;     // 0 = fast, 1 = normal, 2 = photo
+uniform float uCloudCover;
+uniform float uNight;       // 0 by day, 1 at full night (then uSun is the moon)
+uniform sampler2D uSky;
+out vec4 outColor;
+
+const float HMAX = 1200.0;        // nothing in the world is taller than this
+const float FAR  = 16000.0;
+const float CLOUD_Y = 1900.0;
+const mat2  M2 = mat2(0.8, -0.6, 0.6, 0.8);
+
+// ---------------- terrain ----------------
+float continent(vec2 p) {
+  return 0.62 * noise(p * 0.19 + vec2(13.1, 7.7)) + 0.38 * noise(p * 0.43 + vec2(-3.4, 9.2));
+}
+
+float terrain(vec2 x, int oct) {
+  vec2 p = x * (1.0 / 950.0);
+  float c = continent(p);
+  float a = 0.0, b = 1.0;
+  vec2 d = vec2(0.0);
+  for (int i = 0; i < 12; i++) {
+    if (i >= oct) break;
+    vec3 n = noised(p);
+    d += n.yz;
+    a += b * n.x / (1.0 + dot(d, d));   // slopes damp the octaves above them: erosion-like ridges & valleys
+    b *= 0.5;
+    p = M2 * p * 2.02;
+  }
+  float land = smoothstep(-0.28, 0.62, c);
+  float relief = 0.5 + 0.5 * a;
+  relief *= relief * (1.6 - 0.6 * relief);           // flatter lowlands, sharper peaks
+  return mix(-70.0, 14.0, land) + relief * (40.0 + 720.0 * land * land) - 30.0;
+}
+
+// ---------------- sky ----------------
+vec3 skyLUT(vec3 rd) {
+  float az = (rd.x == 0.0 && rd.z == 0.0) ? 0.0 : atan(rd.x, rd.z);
+  // never look below ~1.5 degrees: the lowest rows hold the murky grazing-horizon haze
+  float el = asin(clamp(max(rd.y, 0.026), -1.0, 1.0));
+  float v = 0.5 + 0.5 * sqrt(el / (PI * 0.5));
+  vec3 c = texture(uSky, vec2(az / (2.0 * PI) + 0.5, v)).rgb;
+  vec3 night = mix(vec3(0.018, 0.03, 0.06), vec3(0.005, 0.009, 0.024), clamp(rd.y * 2.5, 0.0, 1.0));
+  return c / max(vec3(1e-3), 1.0 - c) + night * uNight;
+}
+
+float cloudDensity(vec2 p) {
+  vec2 q = p * 0.00042 + uTime * vec2(0.0045, 0.0021);
+  float f = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { f += a * noise(q); q = M2 * q * 2.1 + vec2(0.37 * uTime * 0.01); a *= 0.5; }
+  return smoothstep(1.0 - uCloudCover * 1.25, 1.35 - uCloudCover * 0.8, f + 0.55);
+}
+
+vec4 clouds(vec3 ro, vec3 rd) {
+  if (rd.y <= 0.002) return vec4(0.0);
+  float t = (CLOUD_Y - ro.y) / rd.y;
+  vec2 p = ro.xz + rd.xz * t;
+  float d = cloudDensity(p);
+  if (d <= 0.001) return vec4(0.0);
+  float d2 = cloudDensity(p + uSun.xz * 260.0);
+  float light = exp(-d2 * 2.2);
+  float sunUp = smoothstep(-0.12, 0.1, uSun.y);
+  vec3 amb = skyLUT(vec3(0.0, 1.0, 0.0)) * 0.9 + 0.03 * (1.0 - uNight);
+  float fw = pow(max(dot(rd, uSun), 0.0), 6.0);
+  vec3 col = amb * (0.55 + 0.25 * (1.0 - d)) + uSunCol * sunUp * (light * 1.1 + fw * 2.5 * (1.0 - d * 0.6));
+  float fade = exp(-t * 0.000045);
+  return vec4(col, d * fade);
+}
+
+vec3 stars(vec3 rd) {
+  vec3 q = rd * 220.0;
+  ivec3 c = ivec3(floor(q));
+  float h = hash2(c.xy + ivec2(c.z * 7919, c.z * 31));
+  float h2 = hash2(c.yz + ivec2(127, c.x * 17));
+  vec3 f = fract(q) - 0.5;
+  float star = smoothstep(0.08, 0.0, length(f)) * step(0.992, h);
+  return vec3(0.8, 0.85, 1.0) * star * (0.4 + 2.0 * h2);
+}
+
+vec3 skyColor(vec3 ro, vec3 rd, bool withSun) {
+  vec3 col = skyLUT(vec3(rd.x, max(rd.y, 0.0), rd.z));
+  float night = uNight;
+  if (night > 0.0) col += stars(rd) * night * smoothstep(0.0, 0.15, rd.y);
+  if (withSun) {
+    float mu = dot(rd, uSun);
+    col += uSunCol * smoothstep(0.99955, 0.99975, mu) * mix(90.0, 260.0, uNight);   // the sun, or the moon
+    col += uSunCol * pow(max(mu, 0.0), 900.0) * 6.0;               // corona
+  }
+  vec4 cl = clouds(ro, rd);
+  col = mix(col, cl.rgb, cl.a);
+  return col;
+}
+
+// ---------------- tracing ----------------
+float traceTerrain(vec3 ro, vec3 rd, float tmax, int steps, int oct) {
+  float t = 0.0;
+  if (ro.y > HMAX) {
+    if (rd.y >= 0.0) return -1.0;
+    t = (ro.y - HMAX) / -rd.y;
+  }
+  float tPrev = t;
+  for (int i = 0; i < 400; i++) {
+    if (i >= steps) break;
+    vec3 p = ro + rd * t;
+    int o = t < 900.0 ? oct : (t < 3500.0 ? oct - 1 : oct - 3);   // level of detail by distance
+    float h = p.y - terrain(p.xz, o);
+    if (h < 0.0015 * t) {
+      if (h < 0.0) {
+        // stepped through a steep cliff: bisect back to the true surface
+        float a = tPrev, b = t;
+        for (int j = 0; j < 6; j++) {
+          float m = 0.5 * (a + b);
+          vec3 q = ro + rd * m;
+          if (q.y - terrain(q.xz, o) < 0.0) b = m; else a = m;
+        }
+        t = a;
+      }
+      return t;
+    }
+    if (t > tmax || (p.y > HMAX && rd.y > 0.0)) return -1.0;
+    tPrev = t;
+    t += max(0.42 * h, 0.0004 * t + 0.05);
+  }
+  return t < tmax ? t : -1.0;
+}
+
+float softShadow(vec3 ro, vec3 rd, int steps, float jitter, int nearOct) {
+  float res = 1.0, t = 2.0 + 3.0 * jitter;
+  for (int i = 0; i < 64; i++) {
+    if (i >= steps) break;
+    vec3 p = ro + rd * t;
+    if (p.y > HMAX) break;
+    // near the surface use the same detail as the surface itself, so it can't shadow itself by mistake
+    float h = p.y - terrain(p.xz, i < 8 ? nearOct : 6);
+    res = min(res, 7.0 * h / t);
+    if (res < 0.002) break;
+    t += clamp(h * 0.7, 2.5, 160.0);
+  }
+  return smoothstep(0.0, 1.0, res);
+}
+
+vec3 terrainNormal(vec2 p, float t) {
+  int oct = int(clamp(12.0 - log2(1.0 + t / 220.0) * 1.9, 5.0, 12.0));
+  float e = 0.08 + t * 0.0012;
+  float h = terrain(p, oct);
+  return normalize(vec3(h - terrain(p + vec2(e, 0.0), oct), e, h - terrain(p + vec2(0.0, e), oct)));
+}
+
+float cloudShadow(vec3 p) {
+  if (uSun.y <= 0.0) return 1.0;
+  vec2 q = p.xz + uSun.xz / max(uSun.y, 0.08) * (CLOUD_Y - p.y);
+  return 1.0 - 0.78 * cloudDensity(q);
+}
+
+// ---------------- materials & lighting ----------------
+vec3 ambientSky() { return skyLUT(vec3(0.0, 1.0, 0.0)) * 0.75 + skyLUT(normalize(vec3(uSun.x, 0.15, uSun.z) * -1.0)) * 0.25; }
+
+vec3 terrainAlbedo(vec3 p, vec3 n, out float snowAmt, out float wet) {
+  float h = p.y;
+  float n1 = noise(p.xz * 0.012), n2 = noise(p.xz * 0.09), n3 = noise(p.xz * 0.0019);
+  // rock with strata
+  vec3 rock = mix(vec3(0.16, 0.13, 0.11), vec3(0.36, 0.31, 0.26), 0.5 + 0.5 * n2);
+  rock *= 0.9 + 0.1 * sin(h * 0.21 + n1 * 6.0 + n2 * 2.0);
+  rock = mix(rock, vec3(0.30, 0.18, 0.11), smoothstep(0.2, 0.9, n3) * 0.45);
+  // vegetation
+  vec3 grass = mix(vec3(0.075, 0.12, 0.03), vec3(0.20, 0.21, 0.07), 0.5 + 0.5 * n1);
+  grass = mix(grass, vec3(0.26, 0.20, 0.08), smoothstep(0.3, 0.8, n3) * 0.6);   // drier meadows
+  float forest = smoothstep(-0.05, 0.35, noise(p.xz * 0.0045) + 0.35 * n2) * (1.0 - smoothstep(140.0, 260.0, h + n1 * 50.0));
+  grass = mix(grass, vec3(0.025, 0.055, 0.02) * (0.7 + 0.6 * (0.5 + 0.5 * noise(p.xz * 0.6))), forest);
+  float veg = smoothstep(0.72, 0.86, n.y + n2 * 0.05) * (1.0 - smoothstep(300.0, 420.0, h + n1 * 70.0));
+  vec3 col = mix(rock, grass, veg);
+  // beaches
+  float sand = smoothstep(5.5 + n2 * 3.0, 1.5, h) * smoothstep(0.55, 0.8, n.y);
+  col = mix(col, mix(vec3(0.50, 0.42, 0.30), vec3(0.66, 0.58, 0.42), 0.5 + 0.5 * n2), sand);
+  wet = smoothstep(1.2, 0.0, h);
+  col *= 1.0 - 0.45 * wet;
+  // snow
+  snowAmt = smoothstep(470.0, 540.0, h + n1 * 60.0 + n2 * 14.0) * smoothstep(0.5, 0.78, n.y + 0.12 * n1);
+  col = mix(col, vec3(0.92, 0.94, 0.98), snowAmt);
+  return col;
+}
+
+vec3 shadeTerrain(vec3 p, vec3 n, vec3 rd, float t, bool full) {
+  if (full) {
+    // fine surface detail that would be too expensive to raymarch: bump the normal instead
+    float fade = 1.0 - smoothstep(150.0, 1400.0, t);
+    if (fade > 0.0) {
+      vec3 b1 = noised(p.xz * 0.11 + p.y * 0.05), b2 = noised(p.xz * 0.43 - p.y * 0.1);
+      float rocky = 1.0 - smoothstep(0.7, 0.9, n.y);
+      vec2 g = (b1.yz * 0.11 * 0.5 + b2.yz * 0.43 * 0.18) * fade * (0.35 + 1.4 * rocky);
+      n = normalize(n - vec3(g.x, 0.0, g.y) * 2.2);
+    }
+  }
+  float snow, wet;
+  vec3 alb = terrainAlbedo(p, n, snow, wet);
+  float dif = max(dot(n, uSun), 0.0);
+  float sh = 1.0;
+  float jit = hash2(ivec2(gl_FragCoord.xy));
+  int nearOct = t < 900.0 ? 9 : (t < 3500.0 ? 8 : 6);
+  if (dif > 0.001 && uSun.y > -0.05) sh = softShadow(p + n * 1.0, uSun, full ? (uQuality == 2 ? 64 : (uQuality == 1 ? 36 : 22)) : 14, jit, nearOct);
+  sh *= cloudShadow(p);
+  // occlusion from the heightfield itself
+  float ao = 1.0;
+  if (full) {
+    float o = 0.0;
+    for (int i = 1; i <= 3; i++) {
+      float dd = 6.0 * float(i * i);
+      vec3 q = p + n * dd;
+      o += clamp((q.y - terrain(q.xz, 8)) / dd, 0.0, 1.0);
+    }
+    ao = clamp(o / 3.0, 0.0, 1.0);
+    ao = 0.25 + 0.75 * ao * ao;
+  }
+  vec3 amb = ambientSky();
+  float sunUp = smoothstep(-0.08, 0.06, uSun.y);
+  vec3 bounceDir = normalize(vec3(-uSun.x, 0.0, -uSun.z) + vec3(0.0, 0.01, 0.0));
+  vec3 L = uSunCol * dif * sh * 3.2 * sunUp;
+  L += amb * (0.55 + 0.45 * n.y) * ao * 1.15;
+  L += uSunCol * 0.12 * sunUp * max(dot(n, bounceDir), 0.0) * ao;
+  vec3 col = alb * L;
+  // glints on snow and wet sand
+  vec3 hv = normalize(uSun - rd);
+  col += uSunCol * sh * sunUp * pow(max(dot(n, hv), 0.0), 40.0) * (snow * 0.6 + wet * 1.4) * dif;
+  return col;
+}
+
+vec3 applyAtmosphere(vec3 col, vec3 ro, vec3 rd, float t) {
+  // aerial perspective: blend toward the actual sky color near the horizon in this direction
+  vec3 fogCol = skyLUT(normalize(vec3(rd.x, 0.0, rd.z)));
+  float mu = max(dot(rd, uSun), 0.0);
+  fogCol += uSunCol * pow(mu, 10.0) * 0.6 * smoothstep(-0.1, 0.05, uSun.y);
+  float a = 1.0 - exp(-t * 0.000105);
+  // valley mist: exponential height fog, integrated analytically along the ray
+  float k = 0.014, dens = 0.00055;
+  float ry = abs(rd.y) < 1e-4 ? 1e-4 : rd.y;
+  float hf = dens / k * exp(-max(ro.y, -20.0) * k) * (1.0 - exp(-t * ry * k)) / ry;
+  a = 1.0 - (1.0 - a) * exp(-hf * 0.35);
+  return mix(col, fogCol, clamp(a, 0.0, 1.0));
+}
+
+// ---------------- water ----------------
+vec3 waterNormal(vec2 p, float t) {
+  float fade = 1.0 / (1.0 + t * 0.003);
+  // a small spectrum of directional waves; deep-water dispersion: speed ~ sqrt(g / k)
+  vec2 g = vec2(0.0), dir = normalize(vec2(0.9, 0.42));
+  float amp = 0.42, k = 0.035;
+  for (int i = 0; i < 7; i++) {
+    float ph = dot(dir, p) * k + uTime * sqrt(9.8 * k) + float(i) * 1.93;
+    g += dir * amp * k * cos(ph);
+    dir = M2 * dir; amp *= 0.6; k *= 1.72;
+  }
+  vec3 nn = noised(p * 0.11 + vec2(uTime * 0.2, -uTime * 0.13));
+  g += nn.yz * 0.006;
+  g *= fade;
+  return normalize(vec3(-g.x, 1.0, -g.y));
+}
+
+vec3 shadeWater(vec3 ro, vec3 rd, float t) {
+  vec3 p = ro + rd * t;
+  float depth = max(-terrain(p.xz, 7), 0.0);
+  vec3 n = waterNormal(p.xz, t);
+  float ndv = max(dot(n, -rd), 0.0);
+  float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+  vec3 rr = reflect(rd, n);
+  rr.y = abs(rr.y);
+  vec3 refl = skyColor(p, rr, false);
+  // islands reflected in the sea
+  if (uQuality >= 1 && t < 6000.0) {
+    float tr = traceTerrain(p + vec3(0.0, 0.05, 0.0), rr, min(3500.0, (HMAX - p.y) / max(rr.y, 1e-3)), uQuality == 2 ? 160 : 70, 6);
+    if (tr > 0.0) {
+      vec3 q = p + rr * tr;
+      vec3 nq = terrainNormal(q.xz, tr + t);
+      refl = applyAtmosphere(shadeTerrain(q, nq, rr, tr, false), p, rr, tr);
+    }
+  }
+  float sh = cloudShadow(p);
+  float sunUp = smoothstep(-0.08, 0.06, uSun.y);
+  // body color: light reaching the seabed and coming back, absorbed per channel
+  vec3 amb = ambientSky();
+  float path = depth * (1.0 + 1.0 / max(ndv, 0.15));
+  vec3 trans = exp(-vec3(0.30, 0.075, 0.055) * path);
+  float dummyS, dummyW;
+  vec3 bed = vec3(0.70, 0.62, 0.45) * (uSunCol * max(uSun.y, 0.0) * 2.6 * sh * sunUp + amb * 0.8);
+  vec3 deep = vec3(0.0035, 0.018, 0.032) * (amb * 1.5 + uSunCol * 0.4 * sunUp);
+  vec3 scatter = vec3(0.02, 0.11, 0.12) * (uSunCol * max(uSun.y, 0.0) * 1.6 * sh + amb * 0.3) * (1.0 - exp(-depth * 0.25));
+  vec3 body = mix(deep + scatter * 0.6, bed, trans);
+  vec3 col = mix(body, refl, fres);
+  // sun glitter
+  vec3 h = normalize(uSun - rd);
+  col += uSunCol * sh * sunUp * (pow(max(dot(n, h), 0.0), 700.0) * 160.0 + pow(max(dot(n, h), 0.0), 80.0) * 1.2);
+  // shoreline foam
+  float foamBand = smoothstep(2.2, 0.0, depth);
+  if (foamBand > 0.0) {
+    float wave = sin(depth * 4.0 - uTime * 1.8 + noise(p.xz * 0.05) * 6.0) * 0.5 + 0.5;
+    float fn = noise(p.xz * 0.35 + uTime * 0.3) * 0.5 + 0.5;
+    float foam = foamBand * smoothstep(0.55, 0.95, wave * 0.6 + fn * 0.6) + smoothstep(0.5, 0.0, depth) * 0.8;
+    col = mix(col, (uSunCol * 2.2 * sunUp * sh * max(uSun.y, 0.05) + amb * 0.9) * 0.9, clamp(foam, 0.0, 1.0) * 0.85);
+  }
+  return col;
+}
+
+// ---------------- post ----------------
+vec3 aces(vec3 x) {
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+void main() {
+  vec2 frag = gl_FragCoord.xy;
+  vec2 uv = (2.0 * frag - uRes) / uRes.y;
+  vec3 ro = uCamPos;
+  vec3 rd = normalize(uv.x * uCamR + uv.y * uCamU + uFocal * uCamF);
+
+  int steps = uQuality == 2 ? 360 : (uQuality == 1 ? 220 : 150);
+  int oct   = uQuality == 2 ? 9 : 8;
+
+  float tWater = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
+  float tLimit = min(tWater, FAR);
+  float tT = traceTerrain(ro, rd, tLimit, steps, oct);
+
+  vec3 col;
+  if (tT > 0.0) {
+    vec3 p = ro + rd * tT;
+    vec3 n = terrainNormal(p.xz, tT);
+    col = shadeTerrain(p, n, rd, tT, true);
+    col = applyAtmosphere(col, ro, rd, tT);
+  } else if (tWater < 1e8) {
+    col = shadeWater(ro, rd, tWater);
+    col = applyAtmosphere(col, ro, rd, tWater);
+  } else {
+    col = skyColor(ro, rd, true);
+  }
+
+  // glare around the sun
+  float mu = max(dot(rd, uSun), 0.0);
+  col += uSunCol * (pow(mu, 30.0) * 0.18 + pow(mu, 4.0) * 0.04) * smoothstep(-0.05, 0.05, uSun.y);
+
+  // tone & grade
+  col *= uExposure;
+  col = aces(col);
+  col = pow(col, vec3(1.0 / 2.2));
+  col = mix(col, col * vec3(1.02, 1.0, 0.97), 0.6);
+  vec2 q = frag / uRes;
+  col *= 0.55 + 0.45 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.18);
+  // dither away banding in the sky gradients
+  col += (hash2(ivec2(frag) + ivec2(int(uTime * 60.0) * 13, 0)) - 0.5) / 255.0;
+  outColor = vec4(col, 1.0);
+}
+`;
+
+const VS = /* glsl */`#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+// ---------------------------------------------------------------------
+// JavaScript mirror of the terrain, so the camera can feel the ground
+// ---------------------------------------------------------------------
+const World = (() => {
+  let seed = 1;
+  const imul = Math.imul;
+  function hash2(x, y) {
+    const qx = (x + 4194304) | 0, qy = (y + 4194304) | 0;
+    let n = (imul(qx, 1597334677) ^ imul(qy, 3812015801 | 0) ^ imul(seed, 2654435761 | 0)) >>> 0;
+    n = imul(n ^ (n >>> 16), 2246822519 | 0) >>> 0;
+    n = (n ^ (n >>> 13)) >>> 0;
+    n = imul(n, 3266489917 | 0) >>> 0;
+    n = (n ^ (n >>> 16)) >>> 0;
+    return n / 4294967295;
+  }
+  const out = [0, 0, 0];
+  function noised(x, y) {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    const fx = x - ix, fy = y - iy;
+    const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10), uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+    const dux = 30 * fx * fx * (fx * (fx - 2) + 1), duy = 30 * fy * fy * (fy * (fy - 2) + 1);
+    const a = hash2(ix, iy), b = hash2(ix + 1, iy), c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
+    const k1 = b - a, k2 = c - a, k4 = a - b - c + d;
+    out[0] = -1 + 2 * (a + k1 * ux + k2 * uy + k4 * ux * uy);
+    out[1] = 2 * dux * (k1 + k4 * uy);
+    out[2] = 2 * duy * (k2 + k4 * ux);
+    return out;
+  }
+  const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+  function height(wx, wz, oct = 7) {
+    let px = wx / 950, py = wz / 950;
+    const c = 0.62 * noised(px * 0.19 + 13.1, py * 0.19 + 7.7)[0] + 0.38 * noised(px * 0.43 - 3.4, py * 0.43 + 9.2)[0];
+    let a = 0, b = 1, dx = 0, dy = 0;
+    for (let i = 0; i < oct; i++) {
+      const n = noised(px, py);
+      dx += n[1]; dy += n[2];
+      a += b * n[0] / (1 + dx * dx + dy * dy);
+      b *= 0.5;
+      // GLSL: p = M2 * p * 2.02, with M2 = mat2(0.8,-0.6,0.6,0.8) (column-major)
+      const nx = (0.8 * px + 0.6 * py) * 2.02, ny = (-0.6 * px + 0.8 * py) * 2.02;
+      px = nx; py = ny;
+    }
+    const land = smooth(-0.28, 0.62, c);
+    let relief = 0.5 + 0.5 * a;
+    relief *= relief * (1.6 - 0.6 * relief);
+    const base = -70 + (14 + 70) * land;
+    return base + relief * (40 + 720 * land * land) - 30;
+  }
+  return { height, setSeed(s) { seed = s | 0; }, get seed() { return seed; } };
+})();
+
+// ---------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------
+(function main() {
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('world');
+  const loaderMsg = $('loader-msg');
+  const fail = (msg) => { loaderMsg.textContent = msg; document.querySelector('#loader .bar').style.display = 'none'; };
+
+  const isTouch = matchMedia('(pointer: coarse)').matches;
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+  if (!gl) { fail('This needs WebGL2. Try a recent Chrome, Safari, Firefox or Edge.'); return; }
+
+  // ----- GL helpers -----
+  const parallel = gl.getExtension('KHR_parallel_shader_compile');
+  function shader(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s;
+  }
+  function program(fs) {
+    const p = gl.createProgram();
+    const v = shader(gl.VERTEX_SHADER, VS), f = shader(gl.FRAGMENT_SHADER, fs);
+    gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
+    return { p, v, f };
+  }
+  function check(prog, name) {
+    if (!gl.getProgramParameter(prog.p, gl.LINK_STATUS)) {
+      const log = gl.getShaderInfoLog(prog.f) || gl.getProgramInfoLog(prog.p);
+      console.error(name, log);
+      throw new Error(name + ' failed to compile');
+    }
+    const u = {};
+    const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(prog.p, i); u[info.name] = gl.getUniformLocation(prog.p, info.name); }
+    return { p: prog.p, u };
+  }
+
+  const skyProgRaw = program(SKY_FS);
+  const worldProgRaw = program(WORLD_FS);
+  const vao = gl.createVertexArray();
+
+  // sky lookup table
+  const LUT_W = 256, LUT_H = 128;
+  const lutTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, lutTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, LUT_W, LUT_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const lutFbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, lutFbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, lutTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  // ----- state -----
+  const params = new URLSearchParams(location.hash.slice(1));
+  const state = {
+    seed: parseInt(params.get('seed')) || (1 + Math.floor(Math.random() * 99999)),
+    tod: (() => { const t = parseFloat(params.get('t')); return isFinite(t) ? ((t % 1) + 1) % 1 : 0.742; })(),  // 0..1, 0.5 = noon, ~0.74 = golden hour
+    still: params.has('still'),   // testing aid: freeze the camera
+    fixedScale: params.has('scale') ? parseFloat(params.get('scale')) : 0,
+    lapse: false,
+    time: 0,
+    cam: { x: 0, y: 80, z: 0, yaw: 0, pitch: -0.1, roll: 0, speed: 42, alt: 46 },
+    scale: matchMedia('(pointer: coarse)').matches ? 0.42 : 0.55,
+    quality: 1,
+    fps: 60,
+  };
+  World.setSeed(state.seed);
+  let spawnCam = params.has('cam') ? params.get('cam').split(',').map(Number) : null;
+  if (spawnCam && (spawnCam.length !== 4 || !spawnCam.every(isFinite))) spawnCam = null;
+  if (spawnCam) {
+    const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+    spawnCam = [cl(spawnCam[0], -1e6, 1e6), cl(spawnCam[1], -1e6, 1e6), spawnCam[2], cl(spawnCam[3], 12, 900)];
+  }
+  window.addEventListener('hashchange', () => location.reload());
+
+  // ----- sun -----
+  function sunDir(tod) {
+    const a = (tod - 0.25) * Math.PI * 2;        // sunrise at 0.25, sunset at 0.75
+    const el = Math.sin(a) * 1.05;                // elevation
+    const az = 2.2 + tod * 1.6;                   // sweeps across the sky
+    const x = Math.cos(el) * Math.sin(az), y = Math.sin(el) * 0.98 + 0.02 * Math.sin(a * 2.0), z = Math.cos(el) * Math.cos(az);
+    const l = Math.hypot(x, y, z);
+    return [x / l, y / l, z / l];
+  }
+  // transmittance of sunlight through the same atmosphere model (CPU side, once per frame)
+  function sunColor(sun) {
+    const Re = 6360e3, Ra = 6420e3, Hr = 7994, Hm = 1200;
+    const bR = [5.5e-6, 13.0e-6, 22.4e-6], bM = 21e-6 * 1.1;
+    const ox = 0, oy = Re + 400, oz = 0;
+    const b = oy * sun[1], c = oy * oy - Ra * Ra;
+    const tmax = -b + Math.sqrt(b * b - c);
+    const N = 24, seg = tmax / N;
+    let odR = 0, odM = 0;
+    for (let i = 0; i < N; i++) {
+      const t = (i + 0.5) * seg;
+      const px = ox + sun[0] * t, py = oy + sun[1] * t, pz = oz + sun[2] * t;
+      const h = Math.hypot(px, py, pz) - Re;
+      if (h < 0) { odR += 1e6; break; }
+      odR += Math.exp(-h / Hr) * seg; odM += Math.exp(-h / Hm) * seg;
+    }
+    return bR.map((br) => Math.exp(-(br * odR + bM * odM)) * 1.6);
+  }
+
+  // by night the key light becomes a moon, so the world keeps its shadows
+  let nightAmount = 0;
+  function keyLight(tod) {
+    const sun = sunDir(tod);
+    const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    nightAmount = smooth(-0.04, -0.2, sun[1]);
+    if (sun[1] > -0.04) return { sun, dir: sun, col: sunColor(sun) };
+    const moon = [-sun[0] * 0.8, Math.abs(sun[1]) * 0.9 + 0.25, -sun[2] * 0.8];
+    const l = Math.hypot(...moon);
+    const k = nightAmount;
+    return { sun, dir: moon.map((v) => v / l), col: [0.034 * k, 0.047 * k, 0.078 * k] };
+  }
+
+  // ----- spawn somewhere beautiful -----
+  function spawn() {
+    World.setSeed(state.seed);
+    // look for a spot just offshore, facing a coastline with mountains behind it
+    let best = null, bestScore = -1e9;
+    for (let i = 0; i < 320 && !spawnCam; i++) {
+      const r = 400 + i * 90, a = i * 2.39996;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const h = World.height(x, z, 5);
+      if (h > -6 || h < -60) continue;
+      for (let k = 0; k < 16; k++) {
+        const d = k / 16 * Math.PI * 2, sx = Math.sin(d), sz = Math.cos(d);
+        const near = World.height(x + sx * 700, z + sz * 700, 5);
+        const mid = World.height(x + sx * 1800, z + sz * 1800, 5);
+        const far = Math.max(World.height(x + sx * 3200, z + sz * 3200, 5), World.height(x + sx * 4500, z + sz * 4500, 5));
+        const score = (near > -4 && near < 60 ? 120 : near < -4 ? 40 : -60) + Math.min(mid, 300) * 0.3 + Math.min(far, 650) * 0.6;
+        if (score > bestScore) { bestScore = score; best = { x, z, yaw: d - 0.5 }; }
+      }
+    }
+    best = best || { x: 0, z: 0, yaw: 0 };
+    const c = state.cam;
+    if (spawnCam) {   // a shared link pins the exact view
+      const [x, z, yaw, alt] = spawnCam; spawnCam = null;
+      best = { x, z, yaw: yaw - 0.5 }; c.alt = alt;
+    }
+    c.x = best.x; c.z = best.z; c.yaw = best.yaw + 0.5; c.alt = c.alt || 46;
+    c.y = Math.max(World.height(c.x, c.z, 6), 0) + c.alt;
+    c.pitch = -0.1; c.roll = 0;
+    autopilot.yawVel = 0;
+  }
+
+  // ----- camera control -----
+  const input = { keys: new Set(), dragging: false, lastX: 0, lastY: 0, lookYaw: 0, lookPitch: 0, manualUntil: 0, pinch: 0 };
+  const autopilot = { yawVel: 0, wander: Math.random() * 100 };
+
+  function updateCamera(dt, now) {
+    const c = state.cam;
+    const k = input.keys;
+    // speed & altitude
+    if (k.has('w') || k.has('arrowup')) c.speed = Math.min(c.speed + 60 * dt, 260);
+    if (k.has('s') || k.has('arrowdown')) c.speed = Math.max(c.speed - 60 * dt, 6);
+    if (k.has('e') || k.has(' ')) c.alt = Math.min(c.alt + 60 * dt, 900);
+    if (k.has('q') || k.has('c')) c.alt = Math.max(c.alt - 60 * dt, 12);
+    let steer = 0;
+    if (k.has('a') || k.has('arrowleft')) steer -= 1;
+    if (k.has('d') || k.has('arrowright')) steer += 1;
+    if (steer) input.manualUntil = now + 5;
+
+    // autopilot: look ahead left/center/right and drift toward land with character
+    let targetYawVel = 0;
+    if (now > input.manualUntil) {
+      const probe = (ang, R) => World.height(c.x + Math.sin(c.yaw + ang) * R, c.z + Math.cos(c.yaw + ang) * R, 4);
+      const score = (ang) => {
+        let s = 0;
+        for (const R of [500, 1100, 1900]) { const h = probe(ang, R); s += (h > 2 ? 40 : -25) + Math.min(h, 260) * 0.12 - Math.max(0, h - c.y) * 0.25; }
+        return s;
+      };
+      const L = score(-0.55), C = score(0), R = score(0.55);
+      autopilot.wander += dt * 0.07;
+      const wander = Math.sin(autopilot.wander * 1.7) * 0.5 + Math.sin(autopilot.wander * 0.63 + 2.0) * 0.5;
+      targetYawVel = Math.max(-0.16, Math.min(0.16, (R - L) * 0.0009 + (C < Math.max(L, R) - 30 ? Math.sign(R - L) * 0.06 : 0) + wander * 0.06));
+    }
+    targetYawVel += steer * 0.75;
+    autopilot.yawVel += (targetYawVel - autopilot.yawVel) * Math.min(1, dt * (steer ? 4 : 0.9));
+    c.yaw += autopilot.yawVel * dt;
+
+    // ground following with lookahead so we rise before ridges
+    const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
+    let ground = Math.max(World.height(c.x, c.z, 7), 0);
+    for (let d = 40; d <= 600; d += 70) {
+      const h = Math.max(World.height(c.x + fx * d, c.z + fz * d, 5), 0);
+      ground = Math.max(ground, h - d * 0.12);
+    }
+    const targetY = ground + c.alt;
+    const vy = (targetY - c.y) * Math.min(1, dt * 1.3);
+    c.y += vy;
+    const floor = Math.max(World.height(c.x, c.z, 8), 0) + 6;
+    if (c.y < floor) c.y = floor;
+
+    c.x += fx * c.speed * dt;
+    c.z += fz * c.speed * dt;
+
+    // look offset from dragging relaxes back slowly
+    if (!input.dragging) {
+      input.lookYaw *= Math.exp(-dt * 0.35);
+      input.lookPitch *= Math.exp(-dt * 0.35);
+    }
+    const climb = Math.atan2(vy / Math.max(dt, 1e-3), c.speed) * 0.5;
+    c.pitch += ((-0.11 + climb) - c.pitch) * Math.min(1, dt * 1.5);
+    c.roll += ((-autopilot.yawVel * 0.55) - c.roll) * Math.min(1, dt * 2.0);
+  }
+
+  function cameraBasis() {
+    const c = state.cam;
+    const yaw = c.yaw + input.lookYaw, pitch = Math.max(-1.45, Math.min(1.45, c.pitch + input.lookPitch));
+    const f = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+    let r = [Math.cos(yaw), 0, -Math.sin(yaw)];
+    const u = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];   // f x r = up
+    const cr = Math.cos(c.roll), sr = Math.sin(c.roll);
+    const r2 = r.map((v, i) => v * cr + u[i] * sr), u2 = u.map((v, i) => u[i] * cr - r[i] * sr);
+    return { f, r: r2, u: u2 };
+  }
+
+  // ----- rendering -----
+  let skyProg, worldProg, skyKey = '';
+  function renderSky(sun) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, lutFbo);
+    gl.viewport(0, 0, LUT_W, LUT_H);
+    gl.useProgram(skyProg.p);
+    gl.uniform3fv(skyProg.u.uSun, sun);
+    gl.uniform2f(skyProg.u.uLutRes, LUT_W, LUT_H);
+    gl.uniform1ui(skyProg.u.uSeed, state.seed >>> 0);
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  function setWorldUniforms(w, h, sun, sunCol, quality) {
+    const b = cameraBasis(), c = state.cam, u = worldProg.u;
+    gl.useProgram(worldProg.p);
+    gl.uniform2f(u.uRes, w, h);
+    gl.uniform1f(u.uTime, state.time);
+    gl.uniform3f(u.uCamPos, c.x, c.y, c.z);
+    gl.uniform3fv(u.uCamR, b.r);
+    gl.uniform3fv(u.uCamU, b.u);
+    gl.uniform3fv(u.uCamF, b.f);
+    gl.uniform1f(u.uFocal, 1.0 / Math.tan((w / h < 1 ? 62 : 46) * Math.PI / 360));
+    gl.uniform3fv(u.uSun, sun);
+    gl.uniform3fv(u.uSunCol, sunCol);
+    gl.uniform1f(u.uExposure, exposureFor(sunDir(state.tod)));
+    gl.uniform1i(u.uQuality, quality);
+    gl.uniform1f(u.uNight, nightAmount);
+    gl.uniform1f(u.uCloudCover, 0.5 + 0.12 * Math.sin(state.seed * 1.7));
+    gl.uniform1ui(u.uSeed, state.seed >>> 0);
+    gl.uniform1i(u.uSky, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, lutTex);
+  }
+  function exposureFor(sun) {
+    const e = sun[1];
+    return e > 0.1 ? 0.62 : e > -0.1 ? 0.62 + (0.1 - e) * 5.5 : 1.72 + Math.min(1.6, (-0.1 - e) * 10);
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cw = canvas.clientWidth || window.innerWidth, ch = canvas.clientHeight || window.innerHeight;
+    // never more than ~2.4 megapixels internally, scaled by the adaptive factor
+    const maxScale = Math.min(1, Math.sqrt(2.4e6 / (cw * dpr * ch * dpr)));
+    const s = Math.min(state.scale, maxScale);
+    const w = Math.max(160, Math.round(cw * dpr * s)), h = Math.max(90, Math.round(ch * dpr * s));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+
+  // ----- adaptive resolution -----
+  // Frame intervals snap to the display's refresh (60/120 Hz, or 30 Hz in Low Power Mode),
+  // so thresholds are relative to the shortest interval seen recently, and after a drop
+  // the scale is not allowed straight back up to where it stuttered.
+  const perf = { ema: 16.7, since: 0, vs: 16.7, minWin: 1e9, winStart: 0, ceil: 1 };
+  function adapt(dtMs, now) {
+    perf.ema += (dtMs - perf.ema) * 0.08;
+    state.fps = 1000 / perf.ema;
+    perf.minWin = Math.min(perf.minWin, dtMs);
+    if (now - perf.winStart > 2) { perf.vs = Math.max(16.6, perf.minWin); perf.minWin = 1e9; perf.winStart = now; }
+    perf.ceil = Math.min(1, perf.ceil + 0.004 * dtMs / 1000);
+    if (now - perf.since < 0.5) return;
+    let s = state.scale;
+    const r = perf.ema / perf.vs;
+    if (r > 1.45) { s *= 0.88; perf.ceil = state.scale * 0.97; }
+    else if (r > 1.15) { s *= 0.95; perf.ceil = state.scale * 0.97; }
+    else if (r < 1.07) s = Math.min(s * 1.04, perf.ceil);
+    s = Math.max(0.28, Math.min(1, s));
+    // last resort for slow GPUs: skip the reflection march
+    if (s <= 0.281 && r > 1.45) state.quality = 0;
+    else if (s > 0.4) state.quality = 1;
+    if (Math.abs(s - state.scale) > 0.005) { state.scale = s; perf.since = now; }
+  }
+
+  // ----- UI -----
+  const timeInput = $('time'), clock = $('clock');
+  timeInput.value = state.tod;
+  const fmtClock = (t) => { const m = Math.round(t * 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  timeInput.addEventListener('input', () => { state.tod = parseFloat(timeInput.value); poke(); });
+  const toast = (msg, ms = 2200) => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove('show'), ms); };
+  const lapseBtn = $('btn-lapse');
+  const setLapse = (on) => { state.lapse = on; lapseBtn.classList.toggle('on', on); };
+  lapseBtn.onclick = () => setLapse(!state.lapse);
+  function newWorld() {
+    state.seed = 1 + Math.floor(Math.random() * 99999);
+    spawn();
+    toast('World #' + state.seed);
+  }
+  $('btn-new').onclick = newWorld;
+  $('btn-info').onclick = () => document.body.classList.toggle('panel-open');
+  $('panel-close').onclick = () => document.body.classList.remove('panel-open');
+  $('btn-share').onclick = async () => {
+    const c = state.cam;
+    const url = location.origin + location.pathname + '#seed=' + state.seed + '&t=' + state.tod.toFixed(3) +
+      '&cam=' + [c.x, c.z, c.yaw + input.lookYaw, c.alt].map((v) => +v.toFixed(2)).join(',');
+    try { await navigator.clipboard.writeText(url); toast('Link copied. Anyone who opens it gets this world at this hour.'); }
+    catch { prompt('Copy this link:', url); }
+  };
+  $('btn-photo').onclick = () => photo();
+  $('f-seed').textContent = '#' + state.seed;
+  $('f-lines').textContent = (SKY_FS + WORLD_FS).split('\n').length;
+  fetch(location.href).then((r) => r.text()).then((t) => { $('f-size').textContent = Math.round(new Blob([t]).size / 1024) + ' KB'; }).catch(() => { $('f-size').textContent = '1 file'; });
+
+  // idle fade so the world gets the screen to itself
+  let idleTimer = 0;
+  function poke() { document.body.classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (!document.body.classList.contains('panel-open')) document.body.classList.add('idle'); }, 4500); }
+  ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((e) => window.addEventListener(e, poke, { passive: true }));
+  setTimeout(() => { $('hint').style.opacity = '0'; }, 9000);
+
+  // pointer: drag to look, release lets the autopilot take over again
+  const ptrs = new Set();
+  canvas.addEventListener('pointerdown', (e) => {
+    ptrs.add(e.pointerId);
+    if (ptrs.size > 1) { input.dragging = false; return; }
+    input.dragging = true; input.lastX = e.clientX; input.lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging');
+    document.body.classList.remove('panel-open');
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!input.dragging || ptrs.size > 1) return;
+    const s = 3.2 / Math.max(window.innerHeight, 400);
+    const dx = (e.clientX - input.lastX) * s, dy = (e.clientY - input.lastY) * s;
+    input.lastX = e.clientX; input.lastY = e.clientY;
+    // horizontal drags steer the glider itself; vertical drags just look
+    state.cam.yaw += dx * 0.85; input.lookYaw += dx * 0.15;
+    input.lookPitch = Math.max(-1.2, Math.min(1.0, input.lookPitch - dy));
+    input.manualUntil = state.time + 6;
+  });
+  const endDrag = () => { input.dragging = false; canvas.classList.remove('dragging'); };
+  canvas.addEventListener('pointerup', (e) => { ptrs.delete(e.pointerId); endDrag(); });
+  canvas.addEventListener('pointercancel', (e) => { ptrs.delete(e.pointerId); endDrag(); });
+  window.addEventListener('gesturestart', (e) => e.preventDefault());
+  window.addEventListener('wheel', (e) => {
+    if (document.body.classList.contains('panel-open')) return;
+    state.cam.alt = Math.max(12, Math.min(900, state.cam.alt * Math.exp(e.deltaY * 0.0012)));
+  }, { passive: true });
+  // pinch for altitude on touch screens
+  const touches = new Map();
+  canvas.addEventListener('touchstart', (e) => { for (const t of e.changedTouches) touches.set(t.identifier, t); if (touches.size === 2) input.pinch = pinchDist(); }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    for (const t of e.changedTouches) touches.set(t.identifier, t);
+    if (touches.size === 2) { const d = pinchDist(); state.cam.alt = Math.max(12, Math.min(900, state.cam.alt * Math.pow(input.pinch / d, 1.5))); input.pinch = d; }
+  }, { passive: true });
+  const dropTouches = (e) => { for (const t of e.changedTouches) touches.delete(t.identifier); };
+  canvas.addEventListener('touchend', dropTouches, { passive: true });
+  canvas.addEventListener('touchcancel', dropTouches, { passive: true });
+  function pinchDist() { const [a, b] = [...touches.values()]; return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1; }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (e.repeat && 'hntpi'.includes(k)) return;
+    if (k === 'h') document.body.classList.toggle('hide-ui');
+    else if (k === 'n') newWorld();
+    else if (k === 't') setLapse(!state.lapse);
+    else if (k === 'p') photo();
+    else if (k === 'i') document.body.classList.toggle('panel-open');
+    else if (k === 'escape') document.body.classList.remove('panel-open', 'hide-ui');
+    else if (k === '[') { state.tod = (state.tod - 0.01 + 1) % 1; timeInput.value = state.tod; }
+    else if (k === ']') { state.tod = (state.tod + 0.01) % 1; timeInput.value = state.tod; }
+    else input.keys.add(k);
+    if (k === ' ' || k.startsWith('arrow')) e.preventDefault();
+  });
+  window.addEventListener('keyup', (e) => input.keys.delete(e.key.toLowerCase()));
+  window.addEventListener('blur', () => input.keys.clear());
+
+  // ----- 4K photo, rendered in tiles so no single draw can stall the GPU -----
+  let busy = false;
+  async function photo() {
+    if (busy) return; busy = true;
+    const W = isTouch ? 2560 : 3840, H = isTouch ? 1440 : 2160, T = 256;
+    const name = 'halcyon-' + state.seed + '-' + fmtClock(state.tod).replace(':', '') + '.png';
+    let tex = null, fbo = null, c2 = null;
+    try {
+      toast('Rendering a ' + W + '×' + H + ' photo at maximum quality…', 120000);
+      tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const kl = keyLight(state.tod), sun = kl.dir, sc = kl.col;
+      renderSky(kl.sun); skyKey = '';
+      const frozen = { ...state.cam }, frozenLook = [input.lookYaw, input.lookPitch];
+      const tiles = [];
+      for (let y = 0; y < H; y += T) for (let x = 0; x < W; x += T) tiles.push([x, y]);
+      paused = true;
+      let i = 0;
+      while (i < tiles.length) {
+        if (gl.isContextLost()) throw new Error('context lost');
+        Object.assign(state.cam, frozen); [input.lookYaw, input.lookPitch] = frozenLook;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.viewport(0, 0, W, H);
+        setWorldUniforms(W, H, sun, sc, 2);
+        gl.enable(gl.SCISSOR_TEST);
+        const end = Math.min(tiles.length, i + 6);
+        for (; i < end; i++) { gl.scissor(tiles[i][0], tiles[i][1], T, T); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+        gl.disable(gl.SCISSOR_TEST);
+        await new Promise((r) => requestAnimationFrame(r));
+        $('toast').textContent = 'Rendering ' + W + '×' + H + '… ' + Math.round(100 * i / tiles.length) + '%';
+      }
+      let px = new Uint8Array(W * H * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fbo); gl.deleteTexture(tex); fbo = tex = null;
+      c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+      const ctx = c2.getContext('2d');
+      if (!ctx) throw new Error('no 2d canvas');
+      const img = ctx.createImageData(W, H);
+      const row = W * 4;
+      for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * row, (H - y) * row), y * row);
+      px = null;
+      ctx.putImageData(img, 0, 0);
+      ctx.font = '500 ' + Math.round(H / 64) + 'px -apple-system, Segoe UI, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.textAlign = 'right';
+      ctx.fillText('Halcyon · world #' + state.seed + ' · rendered by Claude', W - H / 45, H - H / 50);
+      const blob = await new Promise((r) => c2.toBlob(r, 'image/png'));
+      if (!blob) throw new Error('encode failed');
+      deliver(blob, name, W, H);
+    } catch (e) {
+      console.warn('photo failed', e);
+      toast('Could not make the photo on this device.');
+    } finally {
+      if (fbo) gl.deleteFramebuffer(fbo);
+      if (tex) gl.deleteTexture(tex);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (c2) c2.width = c2.height = 0;
+      busy = false; paused = false; last = performance.now();
+    }
+  }
+  function download(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  function deliver(blob, name, W, H) {
+    const file = new File([blob], name, { type: 'image/png' });
+    const t = $('toast');
+    if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      // the share sheet needs a fresh tap, so hand the user one
+      toast('Photo ready. Tap here to save it.', 20000);
+      t.classList.add('tap');
+      t.onclick = async () => {
+        t.onclick = null; t.classList.remove('tap', 'show');
+        try { await navigator.share({ files: [file] }); }
+        catch (e) { if (e.name !== 'AbortError') download(blob, name); }
+      };
+      setTimeout(() => { t.classList.remove('tap'); t.onclick = null; }, 20000);
+      return;
+    }
+    download(blob, name);
+    toast('Saved a ' + W + '×' + H + ' photo.');
+  }
+
+  // ----- main loop -----
+  let paused = false, last = 0, ready = false;
+  const stats = $('stats');
+  let statsTick = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!ready || paused) return;
+    const dtMs = Math.min(100, now - (last || now));
+    last = now;
+    const dt = dtMs / 1000;
+    state.time += dt;
+    if (state.lapse) { state.tod = (state.tod + dt / 150) % 1; timeInput.value = state.tod; }
+    if (!state.still) updateCamera(dt, state.time);
+    if (state.fixedScale) { state.scale = state.fixedScale; perf.ema += (dtMs - perf.ema) * 0.08; state.fps = 1000 / perf.ema; }
+    else adapt(dtMs, state.time);
+    resize();
+
+    if (document.body.classList.contains('panel-open') && window.innerWidth <= 720) return;   // panel covers the view
+    const kl = keyLight(state.tod), sun = kl.dir, sc = kl.col;
+    const key = kl.sun.map((v) => v.toFixed(5)).join();
+    if (key !== skyKey) { renderSky(kl.sun); skyKey = key; }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    setWorldUniforms(canvas.width, canvas.height, sun, sc, state.quality);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    if (now - statsTick > 250) {
+      statsTick = now;
+      clock.textContent = fmtClock(state.tod);
+      const c = state.cam;
+      stats.innerHTML =
+        '<b>' + Math.round(state.fps) + '</b> fps · ' + canvas.width + '×' + canvas.height + '<br>' +
+        'world <b>#' + state.seed + '</b> · ' + fmtClock(state.tod) + '<br>' +
+        'alt ' + Math.round(c.y) + ' m · ' + Math.round(c.speed * 3.6) + ' km/h<br>' +
+        'x ' + Math.round(c.x) + ' · z ' + Math.round(c.z);
+    }
+  }
+
+  // ----- boot: compile without freezing the page where the browser allows it -----
+  gl.getError();
+  function boot() {
+    try {
+      skyProg = check(skyProgRaw, 'sky');
+      worldProg = check(worldProgRaw, 'world');
+    } catch (e) {
+      fail('Your GPU could not compile this world. ' + e.message);
+      return;
+    }
+    spawn();
+    resize();
+    // warm up one frame before revealing
+    last = performance.now();
+    ready = true;
+    requestAnimationFrame((t) => {
+      frame(t);
+      setTimeout(() => { $('loader').classList.add('gone'); poke(); }, 350);
+    });
+    window.__halcyon = { state, World };
+  }
+  canvas.addEventListener('webglcontextrestored', () => location.reload());
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); ready = false; fail('The GPU reset. Reload to keep exploring.'); $('loader').classList.remove('gone'); });
+  if (parallel) {
+    const poll = () => {
+      const done = gl.getProgramParameter(skyProgRaw.p, parallel.COMPLETION_STATUS_KHR) && gl.getProgramParameter(worldProgRaw.p, parallel.COMPLETION_STATUS_KHR);
+      done ? boot() : setTimeout(poll, 40);
+    };
+    poll();
+  } else {
+    setTimeout(boot, 30);
+  }
+})();
+</script>
+</body>
+</html>
