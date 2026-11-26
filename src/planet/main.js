@@ -437,7 +437,10 @@ const gov = {
 // From orbit a sunlit limb is nearly always in view, so the night boost shrinks with orbitness.
 // The applied value follows the target in log space: brightening (eyes adjusting to the dark) is slower than darkening.
 function exposureTarget(sunUp, o) {
-  const night = smooth(0.15, -0.15, sunUp);
+  // night = how far the sun is below this camera's *visible* horizon, which dips with altitude on this small planet
+  const dip = Math.acos(Math.min(1, PLANET_R / (PLANET_R + Math.max(0, rig.altitude))));
+  const sunEl = Math.asin(Math.max(-1, Math.min(1, sunUp))) + dip;
+  const night = smooth(-0.05, -0.35, sunEl);
   return state.exposure * Math.pow(1 + 5 * night, 1 - 0.75 * o);
 }
 let exposureLog = null;

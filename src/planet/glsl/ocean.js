@@ -109,7 +109,7 @@ vec3 ocnSpec(vec3 n, vec3 v, vec3 l, vec3 E, float a2) {
 
 // cheap sky for uQuality 0: average sky radiance from skyAmbient, brighter and paler toward the horizon, warm toward the sun
 vec3 ocnSkyCheap(vec3 p, vec3 up, vec3 r) {
-  vec3 amb = skyAmbient(p, up) * (1.0 / PI);
+  vec3 amb = skyAmbient(p, up);   // skyAmbient is already average sky radiance in this convention
   float mu = clamp(dot(r, up), 0.0, 1.0);
   float lum = dot(amb, vec3(0.3, 0.5, 0.2));
   vec3 hor = mix(amb, vec3(lum), 0.45) * 1.7;
