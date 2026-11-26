@@ -35,7 +35,7 @@ const deg = Math.PI / 180;
 const EYE = 1.8;                         // standing eye height (m)
 const FOCAL_ORBIT = 1 / Math.tan(24 * deg); // main.js fovFar = 48 deg
 // opening composition
-const PHASE = 118 * deg;                 // sun - planet - camera angle: >90 shows a crescent with a terminator
+const PHASE = 98 * deg;                  // sun - planet - camera angle: >90 shows a crescent with a terminator
 const CAM_LAT = 22 * deg;                // camera sits a little off the equator
 const SUN_SCREEN = 14 * deg;             // light arrives from the left, slightly from above
 const RIM_H = 9000;                      // visible thickness of the atmosphere glow at the limb (m)

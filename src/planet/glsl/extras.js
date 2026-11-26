@@ -33,7 +33,9 @@ vec3 extMoonDir() { return moonDirection(); }   // defined in common.js (EXT_MOO
 // moonlight irradiance scale (outside the atmosphere), grows with the lit fraction of the disc
 vec3 extMoonE(vec3 md) {
   float k = 0.5 - 0.5 * dot(md, uSunDir);
-  return EXT_MOON_TINT * 0.24 * k * k;
+  // moonlight is ~1e-6 of sunlight: it only reads once the eye has adapted to the dark (exposure boosted by main.js)
+  float adapt = 0.04 + 0.96 * smoothstep(0.17, 0.5, uExposure);
+  return EXT_MOON_TINT * 0.24 * k * k * adapt;
 }
 // Approximate transmittance from altitude h toward direction cosine mu (0 below the horizon). Self-contained on purpose
 // (matches the atmosphere's Rayleigh/Mie columns closely enough for moonlight and for dimming things near the horizon).

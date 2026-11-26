@@ -141,11 +141,13 @@ float cldDensity(vec3 p, vec2 w, vec3 se, float lod, float ero, float sharp) {
 }
 
 // 2D column fraction at reference height (far path, shadows, coverage)
-float cldColumn(vec3 p, vec2 w, float lod) {
+float cldColumnA(vec3 p, vec2 w, float lod, float amp) {
   vec3 q = p * CLD_FREQ + cldWindOffset();
-  float n = 0.5 + 0.75 * cldFbm(q, lod);
+  float n = 0.5 + 0.75 * amp * cldFbm(q, lod);
   return clamp((n - (1.0 - w.x) + 0.04) * 1.25, 0.0, 1.0);
 }
+
+float cldColumn(vec3 p, vec2 w, float lod) { return cldColumnA(p, w, lod, 1.0); }
 
 float cldHG(float mu, float g) {
   float g2 = g * g;
@@ -252,7 +254,9 @@ vec4 cldFar(vec3 ro, vec3 rd, float tMax, float pa) {
   vec3 up = normalize(p);
   vec2 w = cldWeather(up);
   float lod = clamp(4.0 - log2(max(tm * pa, 1.0) / 60.0), 2.0, 3.0);
-  float c = cldColumn(p, w, lod);
+  // from far away the kilometre-scale cumulus texture fades toward its mean so the weather systems read cleanly
+  float amp = mix(1.0, 0.35, smoothstep(30000.0, 140000.0, tm));
+  float c = cldColumnA(p, w, lod, amp);
   if (sm.x <= 0.0) c *= smoothstep(CLD_TOP, CLD_MID, length(p));   // grazing above the mid height
   if (c <= 0.001) return vec4(0.0);
   float thick = CLD_THICK * mix(0.25, 1.0, w.y) * (0.5 + 0.5 * w.x) * (0.35 + 0.65 * c);
@@ -260,14 +264,14 @@ vec4 cldFar(vec3 ro, vec3 rd, float tMax, float pa) {
   float od = CLD_SIGMA * 0.5 * c * c * thick / max(cv, 0.06);
   float a = 1.0 - exp(-od);
   // self shadow from the column toward the sun (gradient trick), and Beer through the slant thickness
-  float c2 = cldColumn(p + uSunDir * 900.0, w, min(lod, 2.0));
+  float c2 = cldColumnA(p + uSunDir * 900.0, w, min(lod, 2.0), amp);
   float sunUp = dot(up, uSunDir);
   float lit = clamp(1.0 - 1.4 * (c2 - c), 0.25, 1.0);
   float slant = exp(-CLD_SIGMA * 0.06 * c * thick / max(sunUp + 0.05, 0.05));
   vec3 sunC = sunLight(p);
   float mu = dot(rd, uSunDir);
   vec3 Ls = sunC * (0.45 * smoothstep(-0.1, 0.6, sunUp) + cldPhase(mu) * 0.9 * (1.0 - a * 0.6)) * lit * (0.35 + 0.65 * slant) * (0.6 + 0.4 * c);
-  vec3 La = skyAmbient(p, up) * 1.3;
+  vec3 La = vec3(0.32, 0.45, 0.7) * SUN_E * 0.02 * smoothstep(-0.05, 0.25, sunUp);   // tops see mostly dark space from orbit
   return vec4((Ls + La) * a, a);
 }
 

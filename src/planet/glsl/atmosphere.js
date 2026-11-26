@@ -212,8 +212,8 @@ vec3 spaceBackground(vec3 rd, bool withSun) {
   if (vis < 0.01) return withSun ? atmoSunDisc(rd, px) : vec3(0.0);
   vec4 mw = atmoMilkyWay(rd);
   vec3 col = mw.rgb * 0.055;
-  col += atmoStarLayer(rd, 70.0, 0.05, px, 3.0);                        // bright, sparse
-  col += atmoStarLayer(rd, 190.0, 0.03 + 0.25 * min(mw.w, 1.5), px, 0.6); // faint, crowding into the Milky Way
+  col += atmoStarLayer(rd, 70.0, 0.035, px, 2.6);                       // bright, sparse
+  col += atmoStarLayer(rd, 190.0, 0.015 + 0.2 * min(mw.w, 1.5), px, 0.4); // faint, crowding into the Milky Way
   col *= vis;
   if (withSun) col += atmoSunDisc(rd, px);
   return col;
