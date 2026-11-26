@@ -105,13 +105,12 @@ gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 let lutDone = false;
 
 // ---------- camera, sun ----------
-const rig = new CameraRig({ canvas, heightAt: (x, y, z) => terrainHeight(x, y, z, 7), R: PLANET_R });
-if (params.cam) rig.setFromHash(params.cam);
-
 function sunDir() {
   const a = state.sunAngle, t = state.sunTilt;
   return [Math.cos(a) * Math.cos(t), Math.sin(t), Math.sin(a) * Math.cos(t)];
 }
+const rig = new CameraRig({ canvas, heightAt: (x, y, z) => terrainHeight(x, y, z, 7), R: PLANET_R, sunDir });
+if (params.cam) rig.setFromHash(params.cam);
 
 // ---------- sizing / adaptive resolution ----------
 const perf = { acc: 0, n: 0, vs: 1 / 60, last: 0, settle: 0, ceil: 1 };
@@ -191,11 +190,16 @@ function frame(now) {
   const focal = 1 / Math.tan(fov / 2);
   rig.focal = focal;
 
-  gl.viewport(0, 0, canvas.width, canvas.height);
+  draw(sd, sunUp, focal, canvas.width, canvas.height, state.quality);
+  app.frames = (app.frames || 0) + 1;
+}
+
+function draw(sd, sunUp, focal, w, h, quality) {
+  gl.viewport(0, 0, w, h);
   gl.useProgram(mainProg.p);
   gl.bindVertexArray(vao);
   const u = mainProg.u;
-  gl.uniform2f(u.uRes, canvas.width, canvas.height);
+  gl.uniform2f(u.uRes, w, h);
   gl.uniform1f(u.uTime, state.time);
   gl.uniform3fv(u.uCamPos, rig.pos);
   gl.uniform3fv(u.uCamR, rig.r);
@@ -205,14 +209,54 @@ function frame(now) {
   gl.uniform1f(u.uCamAlt, rig.altitude);
   gl.uniform3fv(u.uSunDir, sd);
   gl.uniform1f(u.uExposure, exposureFor(rig.altitude, sunUp));
-  gl.uniform1i(u.uQuality, state.quality);
+  gl.uniform1i(u.uQuality, quality);
   gl.uniform1ui(u.uSeed, state.seed);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, lutTex);
   gl.uniform1i(u.uTransLUT, 0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-  app.frames = (app.frames || 0) + 1;
 }
+
+// Render the current view at a given size and best quality, in tiles so phones don't time out.
+// Resolves to a PNG Blob. Used by the UI's photo button.
+app.renderStill = async function (W, H) {
+  if (!compiled) throw new Error('not ready');
+  const sd = sunDir();
+  const up = rig.pos.map((v) => v / Math.hypot(...rig.pos));
+  const sunUp = up[0] * sd[0] + up[1] * sd[1] + up[2] * sd[2];
+  const fov = (state.fovNear + (state.fovFar - state.fovNear) * rig.orbitness()) * Math.PI / 180;
+  const focal = 1 / Math.tan(fov / 2);
+  const tex = gl.createTexture(), fbo = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const px = new Uint8Array(W * H * 4);
+  const tile = 512;
+  try {
+    gl.enable(gl.SCISSOR_TEST);
+    for (let y = 0; y < H; y += tile) {
+      for (let x = 0; x < W; x += tile) {
+        gl.scissor(x, y, Math.min(tile, W - x), Math.min(tile, H - y));
+        draw(sd, sunUp, focal, W, H, 2);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    gl.disable(gl.SCISSOR_TEST);
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  } finally {
+    gl.disable(gl.SCISSOR_TEST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo); gl.deleteTexture(tex);
+  }
+  const c2 = document.createElement('canvas');
+  c2.width = W; c2.height = H;
+  const ctx = c2.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);
+  ctx.putImageData(img, 0, 0);
+  return await new Promise((r) => c2.toBlob(r, 'image/png'));
+};
 
 canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
 canvas.addEventListener('webglcontextrestored', () => location.reload());

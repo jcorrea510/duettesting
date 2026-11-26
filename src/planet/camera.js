@@ -6,7 +6,7 @@
 // Far away it looks at the planet; close to the ground it looks toward the horizon.
 //
 // API used by main.js:
-//   new CameraRig({ canvas, heightAt(dx,dy,dz) -> metres, R })
+//   new CameraRig({ canvas, heightAt(dx,dy,dz) -> metres, R, sunDir() -> [x,y,z] })
 //   rig.update(dt)                -> advances input, glides and flights
 //   rig.pos [x,y,z], rig.r, rig.u, rig.f (orthonormal basis), rig.altitude (m above sea level), rig.groundDir
 //   rig.diveTo([x,y,z])           fly down to that surface direction
@@ -23,7 +23,8 @@ const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a
 const deg = Math.PI / 180;
 
 export class CameraRig {
-  constructor({ canvas, heightAt, R }) {
+  constructor({ canvas, heightAt, R, sunDir = () => [1, 0, 0] }) {
+    this.sunDir = sunDir;
     this.canvas = canvas;
     this.heightAt = heightAt;
     this.R = R;
