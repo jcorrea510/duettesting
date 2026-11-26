@@ -2,11 +2,28 @@
 
 Worlds computed from nothing but math, in real time, in your browser.
 
-Built entirely by Claude (Anthropic's AI) — one HTML file, zero images, zero models, zero libraries.
+Built entirely by Claude (Anthropic's AI). Zero images, zero models, zero libraries, no build step.
 
-## The planet (coming in this update)
+## The planet
 
-_Placeholder: a whole procedural planet you dive into from orbit. Details coming soon._
+![Looking down from 8 km on a snow-capped massif, a fjord coast and cumulus clouds](docs/shots/planet-8km.jpg)
+
+**Live: [jcorrea510.github.io/duettesting](https://jcorrea510.github.io/duettesting/)**
+
+A whole planet that doesn't exist, hanging in space. Tap it and the camera falls from orbit through the atmosphere and the clouds down to the surface in one continuous shot. Press Land and it picks a sunlit beach with mountains behind it and sets you down on the sand. Everything on screen is computed per pixel, every frame, from math: about 250 KB of JavaScript and GLSL (about 80 KB gzipped), no textures or meshes.
+
+**How it's put together.** The page assembles one fragment shader from seven modules (`src/planet/glsl/`), each written by a separate Claude helper working in parallel against a shared contract, then merged and tuned:
+
+- **Terrain.** A 60 km radius planet whose height is 3D noise on the sphere: a domain-warped continent field, a low-frequency "tectonic" field that raises mountain belts and island chains, eroded detail octaves that sharpen into ridges and gullies, sea cliffs, fjord-like inlets and polar ice. Biomes come from latitude, moisture and altitude. The JavaScript copy in `terrain-cpu.js` matches the GPU to within about 15 cm, so the camera can fly over the real ground and find coastlines.
+- **Atmosphere.** Rayleigh, Mie and ozone, integrated per pixel against a transmittance table that is computed once at startup, plus tables for sky light and multiple scattering. It gives the blue limb from orbit, the red terminator, blue zenith, hazy distant mountains and orange sunsets. A procedural Milky Way and star field sit behind it.
+- **Clouds.** A volumetric layer between 1.8 and 4.2 km with a planet-wide weather map: two spiral cyclones with eyes, storm tracks, fronts and cumulus over land. Near the camera it's ray marched with forward scattering and silver linings; from orbit it switches to a cheap column model. Clouds cast shadows on land and sea.
+- **Ocean.** Fourteen directional waves with deep-water dispersion, filtered by distance so the sun glint is a soft patch from space and glitter up close; depth-based colour (turquoise shallows), sky and cloud reflections, and surf that rolls toward the beach.
+- **Night side.** Aurora curtains around both poles, a green airglow line on the limb, a moon with the right phase and moonlight, lightning in night storms and faint bioluminescent surf. There are no city lights: nobody lives here.
+- **Camera.** One rig covers orbit to standing on the sand: a lit crescent opening shot framed for portrait or landscape, tap-to-dive, Land, glide and inertia.
+- **Speed.** It renders at an adaptive resolution and upscales with a sharpening filter. The governor is aware of refresh rate (120 Hz screens are held at 60) and drops quickly when you enter the clouds.
+- **Sound.** A procedural WebAudio soundscape (off until you turn it on): an ambient pad in space, wind on the way down, surf and birds on the beach, crickets at night.
+
+**Controls.** Tap or click the planet to fall in. Drag to spin the planet or look around, scroll or pinch for altitude, and use WASD/arrows and Q/E to fly. `L` lands, `O` or Escape returns to orbit, `P` saves a 4K photo, `M` toggles sound and `I` explains how it works. Share links reopen the exact view.
 
 ## The flyable world
 
@@ -63,10 +80,10 @@ Leave the controls alone and the autopilot flies on its own. The Share button co
 
 ## Running it locally
 
-Everything is static. Open `world/index.html` directly in a recent Chrome, Edge, Firefox or Safari, or serve the repository with any static server:
+Everything is static. The flyable world (`world/index.html`) also opens directly from disk. The planet uses ES modules, so serve the repository with any static server:
 
 ```sh
 python3 -m http.server
 ```
 
-then visit http://localhost:8000/world/. A WebGL2-capable GPU is required.
+then visit http://localhost:8000/ for the planet or http://localhost:8000/world/ for the flyable world. A WebGL2-capable GPU is required.
