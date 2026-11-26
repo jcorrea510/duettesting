@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Halcyon · a planet that doesn't exist</title>
+<meta name="description" content="A whole planet rendered live in your browser from nothing but math. Fall from orbit through the clouds to a beach in one continuous shot. Built by Claude.">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Halcyon">
+<meta name="format-detection" content="telephone=no">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Halcyon">
+<meta property="og:url" content="https://jcorrea510.github.io/duettesting/">
+<meta property="og:title" content="Halcyon · a planet that doesn't exist">
+<meta property="og:description" content="Every mountain, cloud, wave and star is computed live in your browser from math. No models, no textures. Tap to fall in.">
+<meta property="og:image" content="https://jcorrea510.github.io/duettesting/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A procedural planet hanging in space, a sunlit crescent with a glowing atmosphere.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Halcyon · a planet that doesn't exist">
+<meta name="twitter:description" content="Every mountain, cloud, wave and star is computed live in your browser from math. Tap to fall in.">
+<meta name="twitter:image" content="https://jcorrea510.github.io/duettesting/og.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CradialGradient id='l' cx='.78' cy='.3' r='.9'%3E%3Cstop offset='0' stop-color='%23fff6e4'/%3E%3Cstop offset='.35' stop-color='%237fb6e8'/%3E%3Cstop offset='1' stop-color='%23163a66'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='%23000'/%3E%3Ccircle cx='32' cy='32' r='23' fill='url(%23l)'/%3E%3Ccircle cx='24.5' cy='35' r='22.5' fill='%23000' opacity='.93'/%3E%3Ccircle cx='32' cy='32' r='25' fill='none' stroke='%2393c9ff' stroke-opacity='.45' stroke-width='1.6'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Segoe UI", Inter, Roboto, system-ui, sans-serif;
+    --ink: #f3f4f6;
+    --ink-2: rgba(243, 244, 246, .72);
+    --ink-3: rgba(243, 244, 246, .46);
+    --ink-4: rgba(243, 244, 246, .22);
+    --glass: rgba(16, 18, 24, .40);
+    --glass-2: rgba(12, 14, 19, .78);
+    --hair: rgba(255, 255, 255, .11);
+    --glow: #9fd0ff;
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --edge: 18px;
+    --ease: cubic-bezier(.22, .61, .21, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; height: 100dvh; background: #000; overflow: hidden;
+    overscroll-behavior: none; touch-action: none;
+    -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  body { font: 14px/1.45 var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; opacity: 0; transition: opacity 2.4s var(--ease) .15s; }
+  body.ready #c { opacity: 1; }
+  button { font: inherit; color: inherit; touch-action: manipulation; -webkit-appearance: none; appearance: none; }
+  a { color: inherit; }
+  :focus { outline: none; }
+  :focus-visible { outline: 1.5px solid rgba(159, 208, 255, .8); outline-offset: 2px; }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ---------- loading ---------- */
+  #loader { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; transition: opacity .9s var(--ease), visibility 0s linear .9s; }
+  body.ready #loader, body.nogl #loader, body.glfail #loader { opacity: 0; visibility: hidden; }
+  .ld { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .ld svg { width: 58px; height: 58px; overflow: visible; }
+  .ld .track { fill: none; stroke: rgba(255, 255, 255, .07); stroke-width: 1; }
+  .ld .arc { fill: none; stroke: rgba(222, 236, 255, .78); stroke-width: 1.1; stroke-linecap: round;
+    stroke-dasharray: 176 176; stroke-dashoffset: 176; animation: ld-draw 3.2s var(--ease) .25s forwards; }
+  .ld .spin { transform-origin: 29px 29px; animation: ld-spin 5.5s linear infinite; }
+  .ld .dot { fill: #fff; filter: drop-shadow(0 0 4px rgba(170, 215, 255, .9)); }
+  .ld-t { font-size: 10px; letter-spacing: .38em; text-transform: uppercase; color: var(--ink-3); padding-left: .38em;
+    opacity: 0; animation: fade-in 1.6s var(--ease) .6s forwards; }
+  body.nogl #loader, body.glfail #loader { display: none; }
+  .ld-slow { margin: -8px 0 0; max-width: 300px; text-align: center; font-size: 11.5px; line-height: 1.5; color: var(--ink-4);
+    padding: 0 24px; opacity: 0; animation: fade-in 1.6s var(--ease) 9s forwards; }
+  @keyframes ld-draw { to { stroke-dashoffset: 52; } }
+  @keyframes ld-spin { to { transform: rotate(360deg); } }
+  @keyframes fade-in { to { opacity: 1; } }
+
+  /* ---------- failure states ---------- */
+  .fail { position: fixed; inset: 0; display: none; place-items: center; padding: 32px calc(28px + var(--sar)) 32px calc(28px + var(--sal)); text-align: center; }
+  body.nogl #nogl, body.glfail #glfail { display: grid; }
+  .fail div { max-width: 400px; }
+  .fail h2 { margin: 0 0 14px; font-weight: 300; font-size: 13px; letter-spacing: .42em; text-transform: uppercase; padding-left: .42em; }
+  .fail p { margin: 0 0 10px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+  .fail p.s { color: var(--ink-3); font-size: 12.5px; }
+  body.nogl .chrome, body.nogl #intro, body.nogl #cta, body.glfail .chrome, body.glfail #intro, body.glfail #cta { display: none !important; }
+
+  /* ---------- intro ---------- */
+  /* landscape: a title card in the dark space beside the planet (the planet fills ~65% of the height, centred) */
+  #intro { position: fixed; pointer-events: none; z-index: 2; --side: calc(50vw - 33vh - 6vw - var(--sal));
+    left: calc(var(--sal) + 6vw); top: 50%; transform: translateY(-50%); width: max(230px, var(--side)); max-width: 440px; }
+  #intro h1 { margin: 0; font-weight: 200; font-size: clamp(18px, calc(var(--side) / 8.4), 56px); line-height: 1; text-transform: uppercase;
+    letter-spacing: .44em; margin-right: -.44em; color: #fff; text-shadow: 0 0 40px rgba(0, 0, 0, .6);
+    opacity: 0; filter: blur(6px); }
+  #intro p { margin: clamp(12px, 1.8vw, 22px) 0 0; font-size: clamp(12px, 1.12vw, 16px); line-height: 1.6; color: var(--ink-2);
+    letter-spacing: .01em; text-shadow: 0 1px 12px rgba(0, 0, 0, .8); opacity: 0; }
+  #intro p span { display: block; }
+  body.ready #intro h1 { animation: title-in 3.2s var(--ease) .9s forwards; }
+  body.ready #intro p { animation: rise-in 1.8s var(--ease) 2.3s forwards; }
+  @keyframes title-in { 0% { opacity: 0; letter-spacing: .7em; filter: blur(8px); } 100% { opacity: 1; letter-spacing: .44em; filter: blur(0); } }
+  @keyframes rise-in { 0% { opacity: 0; transform: translateY(8px); } 100% { opacity: 1; transform: none; } }
+
+  #cta { position: fixed; left: 0; right: 0; bottom: calc(var(--sab) + 96px); display: flex; flex-direction: column; align-items: center; gap: 12px;
+    pointer-events: none; z-index: 2; opacity: 0; }
+  #cta .ring { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .55); position: relative; }
+  #cta .ring::before { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px rgba(170, 215, 255, .9); }
+  #cta .ring::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .6); animation: ping 2.6s var(--ease) infinite; }
+  #cta .lbl { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--ink-2); padding-left: .3em; text-shadow: 0 1px 10px rgba(0, 0, 0, .9); }
+  .on-fine { display: none; }
+  @media (hover: hover) and (pointer: fine) { .on-fine { display: inline; } .on-touch { display: none; } }
+  body.ready #cta { animation: rise-in 1.6s var(--ease) 3.6s forwards; }
+  @keyframes ping { 0% { transform: scale(1); opacity: .7; } 80%, 100% { transform: scale(2.1); opacity: 0; } }
+
+  body.began #intro, body.began #cta { animation: none; opacity: 0; transition: opacity .7s var(--ease); }
+  body.began #intro h1, body.began #intro p { animation: none; opacity: 1; filter: none; }
+
+  /* ---------- chrome (controls, readout, credit) ---------- */
+  .chrome { opacity: 0; pointer-events: none; transition: opacity .9s var(--ease), transform .9s var(--ease); }
+  body.chrome-on .chrome { opacity: 1; pointer-events: auto; }
+  body.chrome-on.idle .chrome { opacity: 0; pointer-events: none; transition-duration: 1.6s; }
+  body.chrome-on .chrome.ro { pointer-events: none; }
+  body:not(.began) #alt { opacity: 0; }
+
+  #bar { position: fixed; z-index: 3; left: 50%; bottom: calc(var(--sab) + var(--edge)); transform: translate(-50%, 10px);
+    display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 30px;
+    background: var(--glass); border: 1px solid var(--hair);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .05); }
+  body.chrome-on #bar { transform: translate(-50%, 0); }
+  body.chrome-on.idle #bar { transform: translate(-50%, 6px); }
+  #bar button { position: relative; min-width: 44px; height: 44px; border: 0; border-radius: 22px; background: transparent; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; color: var(--ink);
+    transition: background-color .25s ease, color .25s ease, opacity .25s ease, transform .15s ease; }
+  #bar button:hover { background: rgba(255, 255, 255, .08); }
+  #bar button:active { transform: scale(.94); background: rgba(255, 255, 255, .12); }
+  #bar button[disabled] { opacity: .4; cursor: default; }
+  #bar .txt { padding: 0 16px; font-size: 13px; font-weight: 500; letter-spacing: .02em; white-space: nowrap; }
+  #bar .txt.primary { background: rgba(255, 255, 255, .92); color: #05070b; }
+  #bar .txt.primary:hover { background: #fff; }
+  #bar .txt[hidden] { display: none; }
+  #bar .sep { width: 1px; height: 20px; background: var(--hair); margin: 0 4px; }
+  #bar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #bar .ico { color: var(--ink-2); }
+  #bar .ico:hover { color: var(--ink); }
+  #snd .w, #snd[aria-pressed="true"] .x { display: none; }
+  #snd[aria-pressed="true"] .w { display: inline; }
+  #snd[aria-pressed="true"] { color: var(--ink); }
+  #snd[aria-pressed="true"]::after { content: ""; position: absolute; bottom: 6px; left: 50%; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 6px var(--glow); }
+  #pho[aria-busy="true"] svg { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .short { display: none; }
+  @media (max-width: 430px) { .long { display: none; } .short { display: inline; } #bar .txt { padding: 0 14px; } }
+
+  /* altitude readout: a quiet instrument */
+  #alt { position: fixed; z-index: 2; left: calc(var(--sal) + var(--edge) + 4px); top: calc(var(--sat) + var(--edge)); }
+  #alt .k { display: block; font-size: 9px; letter-spacing: .3em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+  #alt .v { display: flex; align-items: baseline; gap: 4px; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; text-shadow: 0 1px 8px rgba(0, 0, 0, .7); }
+  #alt b { font-weight: 300; font-size: 17px; letter-spacing: .02em; min-width: 3.2ch; }
+  #alt i { font-style: normal; font-size: 11px; color: var(--ink-3); letter-spacing: .06em; }
+  #alt .tape { display: block; position: relative; width: 84px; height: 7px; margin-top: 7px;
+    background: linear-gradient(to right, rgba(255, 255, 255, .28) 1px, transparent 1px) 0 100% / 16.8px 4px repeat-x; }
+  #alt .tape::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: rgba(255, 255, 255, .14); }
+  #alt .tape u { position: absolute; bottom: 0; left: 0; width: 1px; height: 7px; background: #fff; box-shadow: 0 0 6px rgba(170, 215, 255, .9);
+    will-change: transform; }
+
+  #credit { position: fixed; z-index: 2; right: calc(var(--sar) + var(--edge) - 10px); top: calc(var(--sat) + var(--edge) - 13px);
+    min-height: 44px; padding: 0 10px; border: 0; background: none; cursor: pointer;
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); transition: color .3s ease, opacity .9s var(--ease); }
+  #credit:hover { color: var(--ink); }
+
+  /* keyboard hints (desktop only) */
+  #keys { position: fixed; z-index: 2; left: 0; right: 0; bottom: calc(var(--sab) + var(--edge) + 66px); display: none; justify-content: center; gap: 18px;
+    font-size: 11.5px; color: var(--ink-3); pointer-events: none; opacity: 0; transition: opacity 1.2s var(--ease); text-shadow: 0 1px 8px rgba(0, 0, 0, .9); }
+  @media (hover: hover) and (pointer: fine) { #keys { display: flex; } }
+  body.keys-on #keys { opacity: 1; }
+  body.idle #keys, body.menu #keys, body.toasting #keys { opacity: 0; }
+  #keys kbd { font: 500 10px/1 var(--font); color: var(--ink-2); border: 1px solid var(--hair); border-bottom-width: 1.5px; border-radius: 4px; padding: 3px 5px; margin-right: 6px; background: rgba(0, 0, 0, .25); }
+
+  /* toast */
+  #toast { position: fixed; z-index: 4; left: 50%; bottom: calc(var(--sab) + var(--edge) + 66px); transform: translate(-50%, 8px);
+    display: flex; align-items: center; gap: 10px; min-height: 44px; max-width: calc(100vw - 32px); padding: 0 18px; border-radius: 22px;
+    background: var(--glass-2); border: 1px solid var(--hair); color: var(--ink); font-size: 13px; letter-spacing: .01em; white-space: nowrap;
+    -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); box-shadow: 0 10px 40px rgba(0, 0, 0, .4);
+    opacity: 0; pointer-events: none; cursor: default; transition: opacity .45s var(--ease), transform .45s var(--ease); }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.act { cursor: pointer; }
+  #toast.act.show { pointer-events: auto; }
+  #toast.act .tt::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 10px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 8px var(--glow); vertical-align: 1px; animation: pulse 1.6s ease-in-out infinite; }
+  #toast .bar { display: none; width: 46px; height: 2px; border-radius: 2px; overflow: hidden; background: rgba(255, 255, 255, .12); position: relative; }
+  #toast.busy .bar { display: block; }
+  #toast .bar::after { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, #fff, transparent); animation: shimmer 1.3s ease-in-out infinite; }
+  @keyframes shimmer { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+
+  /* ---------- info panel ---------- */
+  #scrim { position: fixed; inset: 0; z-index: 5; background: rgba(0, 0, 0, .35); opacity: 0; visibility: hidden; transition: opacity .5s var(--ease), visibility 0s linear .5s; }
+  body.menu #scrim { opacity: 1; visibility: visible; transition: opacity .5s var(--ease); }
+  #info { position: fixed; z-index: 6; top: calc(var(--sat) + 16px); bottom: calc(var(--sab) + 16px); right: calc(var(--sar) + 16px); width: min(400px, calc(100vw - 32px));
+    display: flex; flex-direction: column; border-radius: 22px; background: var(--glass-2); border: 1px solid var(--hair);
+    -webkit-backdrop-filter: blur(28px) saturate(1.3); backdrop-filter: blur(28px) saturate(1.3); box-shadow: 0 20px 80px rgba(0, 0, 0, .55);
+    opacity: 0; visibility: hidden; transform: translateX(24px);
+    transition: opacity .5s var(--ease), transform .6s var(--ease), visibility 0s linear .6s; }
+  body.menu #info { opacity: 1; visibility: visible; transform: none; transition: opacity .5s var(--ease), transform .6s var(--ease); }
+  #info .x { position: absolute; top: 8px; right: 8px; width: 44px; height: 44px; border: 0; border-radius: 22px; background: transparent; cursor: pointer; color: var(--ink-2); display: grid; place-items: center; z-index: 1; }
+  #info .x:hover { background: rgba(255, 255, 255, .08); color: var(--ink); }
+  #info .x svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; fill: none; }
+  #info .sc { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; padding: 30px 30px 26px; -webkit-user-select: text; user-select: text; }
+  #info .ov { font-size: 10px; letter-spacing: .3em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; }
+  #info h2 { margin: 0 0 12px; font-size: 22px; line-height: 1.22; font-weight: 400; letter-spacing: -.012em; color: #fff; padding-right: 20px; }
+  #info p { margin: 0 0 12px; font-size: 14px; line-height: 1.62; color: var(--ink-2); }
+  #info dl { margin: 22px 0 0; }
+  #info dt { font-size: 10px; letter-spacing: .24em; text-transform: uppercase; color: var(--glow); opacity: .85; margin: 18px 0 5px; }
+  #info dd { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
+  #info .stat { margin: 26px 0 0; padding: 18px 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); display: flex; align-items: baseline; gap: 14px; }
+  #info .stat b { font-weight: 200; font-size: 38px; line-height: 1; color: #fff; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #info .stat b small { font-size: 14px; font-weight: 400; letter-spacing: .08em; color: var(--ink-2); margin-left: 4px; }
+  #info .stat span { font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
+  #info .stat.pending b { color: transparent; background: linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,255,255,.22), rgba(255,255,255,.08)) 0 0 / 200% 100%; border-radius: 6px; animation: sweep 1.4s linear infinite; }
+  @keyframes sweep { to { background-position: -200% 0; } }
+  #info .how { margin: 20px 0 0; font-size: 12.5px; line-height: 1.7; color: var(--ink-3); }
+  #info .sig { margin: 22px 0 0; font-size: 13px; color: var(--ink-2); }
+  #info .sig strong { font-weight: 500; color: var(--ink); }
+  #info .links { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  #info .links a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--hair);
+    text-decoration: none; font-size: 12.5px; color: var(--ink); transition: background-color .25s ease; }
+  #info .links a:hover { background: rgba(255, 255, 255, .08); }
+  #info .links a::after { content: "\2197"; margin-left: 7px; color: var(--ink-3); font-size: 11px; }
+  @media (max-width: 600px) {
+    #info { top: auto; left: calc(var(--sal) + 8px); right: calc(var(--sar) + 8px); bottom: calc(var(--sab) + 8px); width: auto; max-height: 82dvh; max-height: 82vh;
+      transform: translateY(40px); border-radius: 24px; }
+    #info .sc { padding: 28px 24px 22px; }
+    #info h2 { font-size: 20px; }
+  }
+
+  /* portrait / narrow: title on top, centred */
+  @media (max-aspect-ratio: 5/4) {
+    #intro { left: 0; right: 0; top: calc(var(--sat) + 10vh); transform: none; width: auto; max-width: none; text-align: center; padding: 0 28px; }
+    #intro h1 { font-size: clamp(26px, 8.4vw, 54px); margin-right: 0; padding-left: .44em; }
+    #intro p { font-size: clamp(13px, 3.6vw, 16px); }
+    @keyframes title-in { 0% { opacity: 0; letter-spacing: .7em; padding-left: .7em; filter: blur(8px); } 100% { opacity: 1; letter-spacing: .44em; padding-left: .44em; filter: blur(0); } }
+  }
+  @media (max-height: 500px) and (min-aspect-ratio: 5/4) {
+    #intro { top: calc(var(--sat) + 15vh); transform: none; }
+  }
+  @media (max-height: 420px) {
+    #cta { bottom: calc(var(--sab) + 76px); }
+    #cta .ring { display: none; }
+    :root { --edge: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01s !important; animation-delay: 0s !important; transition-duration: .2s !important; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A procedurally generated planet, rendered live"></canvas>
+
+<div id="loader" aria-hidden="true">
+  <div class="ld">
+    <svg viewBox="0 0 58 58"><circle class="track" cx="29" cy="29" r="28"/><g class="spin"><circle class="arc" cx="29" cy="29" r="28" transform="rotate(-90 29 29)"/><circle class="dot" cx="29" cy="1" r="1.6"/></g></svg>
+    <div class="ld-t">Forming a planet</div>
+    <p class="ld-slow">Building the shaders on your graphics card. The first visit can take a few seconds.</p>
+  </div>
+</div>
+
+<section id="intro" aria-label="Introduction">
+  <h1>Halcyon</h1>
+  <p><span>A planet that doesn't exist.</span> <span>Rendered live, from nothing, in your browser.</span></p>
+</section>
+<div id="cta" aria-hidden="true"><div class="ring"></div><div class="lbl"><span class="on-touch">Tap anywhere to fall in</span><span class="on-fine">Click anywhere to fall in</span></div></div>
+
+<div id="alt" class="chrome ro" aria-hidden="true"><span class="k">Altitude</span><span class="v"><b id="altv">&nbsp;</b><i id="altu"></i></span><span class="tape"><u id="altm"></u></span></div>
+<button id="credit" class="chrome" type="button" aria-label="Built by Claude. How this was made">Built by Claude</button>
+<div id="keys" aria-hidden="true"><span><kbd>Drag</kbd>look</span><span><kbd>Scroll</kbd>altitude</span><span><kbd>WASD</kbd>fly</span><span><kbd>L</kbd>land</span><span><kbd>O</kbd>orbit</span></div>
+
+<nav id="bar" class="chrome" aria-label="Controls">
+  <button id="land" class="txt primary" type="button" title="Land on a beach (L)">Land</button>
+  <button id="orbit" class="txt" type="button" title="Return to orbit (O)" hidden><span class="long">Return to orbit</span><span class="short">Orbit</span></button>
+  <span class="sep" aria-hidden="true"></span>
+  <button id="snd" class="ico" type="button" aria-pressed="false" aria-label="Sound" title="Sound (M)"><svg viewBox="0 0 24 24"><path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z"/><g class="w"><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/></g><g class="x"><path d="M16 10l4 4M20 10l-4 4"/></g></svg></button>
+  <button id="pho" class="ico" type="button" aria-label="Take a photo" title="Photo (P)"><svg viewBox="0 0 24 24"><path d="M4 8.5h3.2l1.6-2.5h6.4l1.6 2.5H20v10.5H4z"/><circle cx="12" cy="13.3" r="3.3"/></svg></button>
+  <button id="shr" class="ico" type="button" aria-label="Share this view" title="Share this view"><svg viewBox="0 0 24 24"><path d="M12 3.5v11"/><path d="M8.2 7.2L12 3.5l3.8 3.7"/><path d="M7 10.5H5.5v9h13v-9H17"/></svg></button>
+  <button id="inf" class="ico" type="button" aria-label="How this was made" aria-controls="info" aria-expanded="false" title="How this was made (I)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2"/><path d="M12 7.6v.1"/></svg></button>
+</nav>
+
+<div role="status" aria-live="polite" class="vh" id="live"></div>
+<button id="toast" type="button" tabindex="-1"><span class="bar"></span><span class="tt"></span></button>
+
+<div id="scrim"></div>
+<aside id="info" role="dialog" aria-modal="true" aria-labelledby="info-h" aria-hidden="true">
+  <button class="x" type="button" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div class="sc">
+    <p class="ov">How this was made</p>
+    <h2 id="info-h">Nothing here was modelled, painted or photographed.</h2>
+    <p>Every mountain, cloud, wave and star is computed from math, for every pixel, every frame, on your own device. There are no 3D models, no textures and no images. Nothing is downloaded but the code.</p>
+    <dl>
+      <dt>Ground</dt>
+      <dd>Continents and mountain ranges are a single noise function wrapped around a sphere. Each pixel sends out a ray and marches it forward until it meets that surface.</dd>
+      <dt>Sky</dt>
+      <dd>Sunlight is scattered through a simulated atmosphere (Rayleigh and Mie scattering). That one model gives the blue day, the red dusk and the glowing rim you see from orbit.</dd>
+      <dt>Clouds and sea</dt>
+      <dd>Clouds are volumes that rays step through, lit by the sun and casting shadows on the land below. The ocean's waves, reflections and shallows are shaded per pixel too.</dd>
+      <dt>One shot</dt>
+      <dd>The camera falls from orbit to a few metres above the sand without a cut or a loading screen, because there is nothing to load.</dd>
+    </dl>
+    <div class="stat pending" id="stat"><b id="kb">48<small>KB</small></b><span id="kbs">The whole planet: HTML, JavaScript and GLSL shaders. No libraries, no build step.</span></div>
+    <p class="how" id="how"><span class="on-touch">Drag to look around. Pinch to climb or descend. Tap the planet to dive there.</span><span class="on-fine">Drag to look around. Scroll to climb or descend. W A S D to fly, Q and E for altitude. Click the planet to dive there.</span></p>
+    <p class="sig"><strong>Built by Claude.</strong></p>
+    <div class="links">
+      <a href="https://github.com/jcorrea510/duettesting" target="_blank" rel="noopener">Source code</a>
+      <a href="world/">Also: a flyable world</a>
+    </div>
+  </div>
+</aside>
+
+<div class="fail" id="nogl" role="alert"><div>
+  <h2>Halcyon</h2>
+  <p>This planet is drawn live by your graphics card, and this browser can't give it WebGL2.</p>
+  <p class="s">Try a recent Safari, Chrome, Firefox or Edge, and check that hardware acceleration is turned on.</p>
+</div></div>
+<div class="fail" id="glfail" role="alert"><div>
+  <h2>Halcyon</h2>
+  <p>Your graphics card couldn't build this planet's shaders.</p>
+  <p class="s">Reloading sometimes helps. A recent browser on a newer device works best.</p>
+</div></div>
+<noscript><div class="fail" style="display:grid"><div><h2>Halcyon</h2><p>This planet is computed live in your browser, so it needs JavaScript.</p></div></div></noscript>
+
+<script type="module" src="src/planet/main.js"></script>
+</body>
+</html>
