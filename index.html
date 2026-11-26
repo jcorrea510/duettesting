@@ -25,6 +25,7 @@
     font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif;
     overflow: hidden; overscroll-behavior: none; -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;
+    touch-action: manipulation;
   }
   canvas#world {
     position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block;
@@ -33,7 +34,7 @@
   canvas#world.dragging { cursor: grabbing; }
   .ui { transition: opacity 0.9s ease; }
   body.hide-ui .ui { opacity: 0; pointer-events: none; }
-  body.idle .ui.fades { opacity: 0; }
+  body.idle .ui.fades { opacity: 0; pointer-events: none; }
 
   /* title */
   #title {
@@ -173,7 +174,9 @@
     #time-wrap span { display: none; }
     #credit { bottom: auto; top: max(44px, calc(env(safe-area-inset-top) + 26px)); left: max(14px, env(safe-area-inset-left)); right: auto; padding: 4px 8px; font-size: 11px; }
     #hint { display: none; }
+    #panel { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(10, 12, 18, 0.96); }
   }
+  #toast.tap { pointer-events: auto; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -378,7 +381,7 @@ uniform float uNight;       // 0 by day, 1 at full night (then uSun is the moon)
 uniform sampler2D uSky;
 out vec4 outColor;
 
-const float HMAX = 820.0;        // nothing in the world is taller than this
+const float HMAX = 1200.0;        // nothing in the world is taller than this
 const float FAR  = 16000.0;
 const float CLOUD_Y = 1900.0;
 const mat2  M2 = mat2(0.8, -0.6, 0.6, 0.8);
@@ -409,7 +412,7 @@ float terrain(vec2 x, int oct) {
 
 // ---------------- sky ----------------
 vec3 skyLUT(vec3 rd) {
-  float az = atan(rd.x, rd.z);
+  float az = (rd.x == 0.0 && rd.z == 0.0) ? 0.0 : atan(rd.x, rd.z);
   // never look below ~1.5 degrees: the lowest rows hold the murky grazing-horizon haze
   float el = asin(clamp(max(rd.y, 0.026), -1.0, 1.0));
   float v = 0.5 + 0.5 * sqrt(el / (PI * 0.5));
@@ -498,14 +501,14 @@ float traceTerrain(vec3 ro, vec3 rd, float tmax, int steps, int oct) {
   return t < tmax ? t : -1.0;
 }
 
-float softShadow(vec3 ro, vec3 rd, int steps, float jitter) {
+float softShadow(vec3 ro, vec3 rd, int steps, float jitter, int nearOct) {
   float res = 1.0, t = 2.0 + 3.0 * jitter;
   for (int i = 0; i < 64; i++) {
     if (i >= steps) break;
     vec3 p = ro + rd * t;
     if (p.y > HMAX) break;
     // near the surface use the same detail as the surface itself, so it can't shadow itself by mistake
-    float h = p.y - terrain(p.xz, i < 8 ? 9 : 6);
+    float h = p.y - terrain(p.xz, i < 8 ? nearOct : 6);
     res = min(res, 7.0 * h / t);
     if (res < 0.002) break;
     t += clamp(h * 0.7, 2.5, 160.0);
@@ -517,8 +520,7 @@ vec3 terrainNormal(vec2 p, float t) {
   int oct = int(clamp(12.0 - log2(1.0 + t / 220.0) * 1.9, 5.0, 12.0));
   float e = 0.08 + t * 0.0012;
   float h = terrain(p, oct);
-  return normalize(vec3(terrain(p - vec2(e, 0.0), oct) - terrain(p + vec2(e, 0.0), oct), 2.0 * e,
-                        terrain(p - vec2(0.0, e), oct) - terrain(p + vec2(0.0, e), oct)));
+  return normalize(vec3(h - terrain(p + vec2(e, 0.0), oct), e, h - terrain(p + vec2(0.0, e), oct)));
 }
 
 float cloudShadow(vec3 p) {
@@ -571,7 +573,8 @@ vec3 shadeTerrain(vec3 p, vec3 n, vec3 rd, float t, bool full) {
   float dif = max(dot(n, uSun), 0.0);
   float sh = 1.0;
   float jit = hash2(ivec2(gl_FragCoord.xy));
-  if (dif > 0.001 && uSun.y > -0.05) sh = softShadow(p + n * 1.0, uSun, full ? (uQuality == 2 ? 64 : (uQuality == 1 ? 36 : 22)) : 14, jit);
+  int nearOct = t < 900.0 ? 9 : (t < 3500.0 ? 8 : 6);
+  if (dif > 0.001 && uSun.y > -0.05) sh = softShadow(p + n * 1.0, uSun, full ? (uQuality == 2 ? 64 : (uQuality == 1 ? 36 : 22)) : 14, jit, nearOct);
   sh *= cloudShadow(p);
   // occlusion from the heightfield itself
   float ao = 1.0;
@@ -640,7 +643,7 @@ vec3 shadeWater(vec3 ro, vec3 rd, float t) {
   vec3 refl = skyColor(p, rr, false);
   // islands reflected in the sea
   if (uQuality >= 1 && t < 6000.0) {
-    float tr = traceTerrain(p + vec3(0.0, 0.05, 0.0), rr, 3500.0, uQuality == 2 ? 160 : 70, 6);
+    float tr = traceTerrain(p + vec3(0.0, 0.05, 0.0), rr, min(3500.0, (HMAX - p.y) / max(rr.y, 1e-3)), uQuality == 2 ? 160 : 70, 6);
     if (tr > 0.0) {
       vec3 q = p + rr * tr;
       vec3 nq = terrainNormal(q.xz, tr + t);
@@ -837,7 +840,7 @@ const World = (() => {
   const params = new URLSearchParams(location.hash.slice(1));
   const state = {
     seed: parseInt(params.get('seed')) || (1 + Math.floor(Math.random() * 99999)),
-    tod: params.has('t') ? parseFloat(params.get('t')) : 0.742,  // 0..1, 0.5 = noon, ~0.74 = golden hour
+    tod: (() => { const t = parseFloat(params.get('t')); return isFinite(t) ? ((t % 1) + 1) % 1 : 0.742; })(),  // 0..1, 0.5 = noon, ~0.74 = golden hour
     still: params.has('still'),   // testing aid: freeze the camera
     fixedScale: params.has('scale') ? parseFloat(params.get('scale')) : 0,
     lapse: false,
@@ -849,7 +852,12 @@ const World = (() => {
   };
   World.setSeed(state.seed);
   let spawnCam = params.has('cam') ? params.get('cam').split(',').map(Number) : null;
-  if (spawnCam && (spawnCam.length !== 4 || spawnCam.some(isNaN))) spawnCam = null;
+  if (spawnCam && (spawnCam.length !== 4 || !spawnCam.every(isFinite))) spawnCam = null;
+  if (spawnCam) {
+    const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+    spawnCam = [cl(spawnCam[0], -1e6, 1e6), cl(spawnCam[1], -1e6, 1e6), spawnCam[2], cl(spawnCam[3], 12, 900)];
+  }
+  window.addEventListener('hashchange', () => location.reload());
 
   // ----- sun -----
   function sunDir(tod) {
@@ -996,7 +1004,7 @@ const World = (() => {
   }
 
   // ----- rendering -----
-  let skyProg, worldProg;
+  let skyProg, worldProg, skyKey = '';
   function renderSky(sun) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, lutFbo);
     gl.viewport(0, 0, LUT_W, LUT_H);
@@ -1045,16 +1053,26 @@ const World = (() => {
   }
 
   // ----- adaptive resolution -----
-  const perf = { ema: 16.7, last: 0, since: 0 };
+  // Frame intervals snap to the display's refresh (60/120 Hz, or 30 Hz in Low Power Mode),
+  // so thresholds are relative to the shortest interval seen recently, and after a drop
+  // the scale is not allowed straight back up to where it stuttered.
+  const perf = { ema: 16.7, since: 0, vs: 16.7, minWin: 1e9, winStart: 0, ceil: 1 };
   function adapt(dtMs, now) {
     perf.ema += (dtMs - perf.ema) * 0.08;
     state.fps = 1000 / perf.ema;
+    perf.minWin = Math.min(perf.minWin, dtMs);
+    if (now - perf.winStart > 2) { perf.vs = Math.max(16.6, perf.minWin); perf.minWin = 1e9; perf.winStart = now; }
+    perf.ceil = Math.min(1, perf.ceil + 0.004 * dtMs / 1000);
     if (now - perf.since < 0.5) return;
     let s = state.scale;
-    if (perf.ema > 24) s *= 0.88;
-    else if (perf.ema > 19) s *= 0.95;
-    else if (perf.ema < 17.8) s *= 1.04;
+    const r = perf.ema / perf.vs;
+    if (r > 1.45) { s *= 0.88; perf.ceil = state.scale * 0.97; }
+    else if (r > 1.15) { s *= 0.95; perf.ceil = state.scale * 0.97; }
+    else if (r < 1.07) s = Math.min(s * 1.04, perf.ceil);
     s = Math.max(0.28, Math.min(1, s));
+    // last resort for slow GPUs: skip the reflection march
+    if (s <= 0.281 && r > 1.45) state.quality = 0;
+    else if (s > 0.4) state.quality = 1;
     if (Math.abs(s - state.scale) > 0.005) { state.scale = s; perf.since = now; }
   }
 
@@ -1094,13 +1112,16 @@ const World = (() => {
   setTimeout(() => { $('hint').style.opacity = '0'; }, 9000);
 
   // pointer: drag to look, release lets the autopilot take over again
+  const ptrs = new Set();
   canvas.addEventListener('pointerdown', (e) => {
+    ptrs.add(e.pointerId);
+    if (ptrs.size > 1) { input.dragging = false; return; }
     input.dragging = true; input.lastX = e.clientX; input.lastY = e.clientY;
     canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging');
     document.body.classList.remove('panel-open');
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!input.dragging) return;
+    if (!input.dragging || ptrs.size > 1) return;
     const s = 3.2 / Math.max(window.innerHeight, 400);
     const dx = (e.clientX - input.lastX) * s, dy = (e.clientY - input.lastY) * s;
     input.lastX = e.clientX; input.lastY = e.clientY;
@@ -1110,8 +1131,9 @@ const World = (() => {
     input.manualUntil = state.time + 6;
   });
   const endDrag = () => { input.dragging = false; canvas.classList.remove('dragging'); };
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointerup', (e) => { ptrs.delete(e.pointerId); endDrag(); });
+  canvas.addEventListener('pointercancel', (e) => { ptrs.delete(e.pointerId); endDrag(); });
+  window.addEventListener('gesturestart', (e) => e.preventDefault());
   window.addEventListener('wheel', (e) => {
     if (document.body.classList.contains('panel-open')) return;
     state.cam.alt = Math.max(12, Math.min(900, state.cam.alt * Math.exp(e.deltaY * 0.0012)));
@@ -1123,12 +1145,15 @@ const World = (() => {
     for (const t of e.changedTouches) touches.set(t.identifier, t);
     if (touches.size === 2) { const d = pinchDist(); state.cam.alt = Math.max(12, Math.min(900, state.cam.alt * Math.pow(input.pinch / d, 1.5))); input.pinch = d; }
   }, { passive: true });
-  canvas.addEventListener('touchend', (e) => { for (const t of e.changedTouches) touches.delete(t.identifier); }, { passive: true });
+  const dropTouches = (e) => { for (const t of e.changedTouches) touches.delete(t.identifier); };
+  canvas.addEventListener('touchend', dropTouches, { passive: true });
+  canvas.addEventListener('touchcancel', dropTouches, { passive: true });
   function pinchDist() { const [a, b] = [...touches.values()]; return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1; }
 
   window.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
+    if (e.repeat && 'hntpi'.includes(k)) return;
     if (k === 'h') document.body.classList.toggle('hide-ui');
     else if (k === 'n') newWorld();
     else if (k === 't') setLapse(!state.lapse);
@@ -1148,61 +1173,91 @@ const World = (() => {
   async function photo() {
     if (busy) return; busy = true;
     const W = isTouch ? 2560 : 3840, H = isTouch ? 1440 : 2160, T = 256;
-    toast('Rendering a ' + W + '×' + H + ' photo at maximum quality…', 60000);
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    const fbo = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    const kl = keyLight(state.tod), sun = kl.dir, sc = kl.col;
-    renderSky(kl.sun);
-    const frozen = { ...state.cam }, frozenLook = [input.lookYaw, input.lookPitch];
-    const tiles = [];
-    for (let y = 0; y < H; y += T) for (let x = 0; x < W; x += T) tiles.push([x, y]);
-    paused = true;
-    let i = 0;
-    while (i < tiles.length) {
-      Object.assign(state.cam, frozen); [input.lookYaw, input.lookPitch] = frozenLook;
+    const name = 'halcyon-' + state.seed + '-' + fmtClock(state.tod).replace(':', '') + '.png';
+    let tex = null, fbo = null, c2 = null;
+    try {
+      toast('Rendering a ' + W + '×' + H + ' photo at maximum quality…', 120000);
+      tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      fbo = gl.createFramebuffer();
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-      gl.viewport(0, 0, W, H);
-      setWorldUniforms(W, H, sun, sc, 2);
-      gl.enable(gl.SCISSOR_TEST);
-      const end = Math.min(tiles.length, i + 6);
-      for (; i < end; i++) { gl.scissor(tiles[i][0], tiles[i][1], T, T); gl.drawArrays(gl.TRIANGLES, 0, 3); }
-      gl.disable(gl.SCISSOR_TEST);
-      await new Promise((r) => requestAnimationFrame(r));
-      $('toast').textContent = 'Rendering ' + W + '×' + H + '… ' + Math.round(100 * i / tiles.length) + '%';
-    }
-    const px = new Uint8Array(W * H * 4);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.deleteFramebuffer(fbo); gl.deleteTexture(tex);
-    const c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
-    const ctx = c2.getContext('2d');
-    const img = ctx.createImageData(W, H);
-    const row = W * 4;
-    for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * row, (H - y) * row), y * row);
-    ctx.putImageData(img, 0, 0);
-    ctx.font = '500 34px -apple-system, Segoe UI, sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.textAlign = 'right';
-    ctx.fillText('Halcyon · world #' + state.seed + ' · rendered by Claude', W - 48, H - 44);
-    c2.toBlob(async (blob) => {
-      const name = 'halcyon-' + state.seed + '-' + fmtClock(state.tod).replace(':', '') + '.png';
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const kl = keyLight(state.tod), sun = kl.dir, sc = kl.col;
+      renderSky(kl.sun); skyKey = '';
+      const frozen = { ...state.cam }, frozenLook = [input.lookYaw, input.lookPitch];
+      const tiles = [];
+      for (let y = 0; y < H; y += T) for (let x = 0; x < W; x += T) tiles.push([x, y]);
+      paused = true;
+      let i = 0;
+      while (i < tiles.length) {
+        if (gl.isContextLost()) throw new Error('context lost');
+        Object.assign(state.cam, frozen); [input.lookYaw, input.lookPitch] = frozenLook;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.viewport(0, 0, W, H);
+        setWorldUniforms(W, H, sun, sc, 2);
+        gl.enable(gl.SCISSOR_TEST);
+        const end = Math.min(tiles.length, i + 6);
+        for (; i < end; i++) { gl.scissor(tiles[i][0], tiles[i][1], T, T); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+        gl.disable(gl.SCISSOR_TEST);
+        await new Promise((r) => requestAnimationFrame(r));
+        $('toast').textContent = 'Rendering ' + W + '×' + H + '… ' + Math.round(100 * i / tiles.length) + '%';
+      }
+      let px = new Uint8Array(W * H * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fbo); gl.deleteTexture(tex); fbo = tex = null;
+      c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+      const ctx = c2.getContext('2d');
+      if (!ctx) throw new Error('no 2d canvas');
+      const img = ctx.createImageData(W, H);
+      const row = W * 4;
+      for (let y = 0; y < H; y++) img.data.set(px.subarray((H - 1 - y) * row, (H - y) * row), y * row);
+      px = null;
+      ctx.putImageData(img, 0, 0);
+      ctx.font = '500 ' + Math.round(H / 64) + 'px -apple-system, Segoe UI, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.textAlign = 'right';
+      ctx.fillText('Halcyon · world #' + state.seed + ' · rendered by Claude', W - H / 45, H - H / 50);
+      const blob = await new Promise((r) => c2.toBlob(r, 'image/png'));
+      if (!blob) throw new Error('encode failed');
+      deliver(blob, name, W, H);
+    } catch (e) {
+      console.warn('photo failed', e);
+      toast('Could not make the photo on this device.');
+    } finally {
+      if (fbo) gl.deleteFramebuffer(fbo);
+      if (tex) gl.deleteTexture(tex);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (c2) c2.width = c2.height = 0;
       busy = false; paused = false; last = performance.now();
-      try {
-        const file = new File([blob], name, { type: 'image/png' });
-        if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
-      } catch (e) { /* fall through to a plain download */ }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      toast('Saved a ' + W + '×' + H + ' photo.');
-    }, 'image/png');
+    }
+  }
+  function download(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  function deliver(blob, name, W, H) {
+    const file = new File([blob], name, { type: 'image/png' });
+    const t = $('toast');
+    if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      // the share sheet needs a fresh tap, so hand the user one
+      toast('Photo ready. Tap here to save it.', 20000);
+      t.classList.add('tap');
+      t.onclick = async () => {
+        t.onclick = null; t.classList.remove('tap', 'show');
+        try { await navigator.share({ files: [file] }); }
+        catch (e) { if (e.name !== 'AbortError') download(blob, name); }
+      };
+      setTimeout(() => { t.classList.remove('tap'); t.onclick = null; }, 20000);
+      return;
+    }
+    download(blob, name);
+    toast('Saved a ' + W + '×' + H + ' photo.');
   }
 
   // ----- main loop -----
@@ -1222,8 +1277,10 @@ const World = (() => {
     else adapt(dtMs, state.time);
     resize();
 
+    if (document.body.classList.contains('panel-open') && window.innerWidth <= 720) return;   // panel covers the view
     const kl = keyLight(state.tod), sun = kl.dir, sc = kl.col;
-    renderSky(kl.sun);
+    const key = kl.sun.map((v) => v.toFixed(5)).join();
+    if (key !== skyKey) { renderSky(kl.sun); skyKey = key; }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
     setWorldUniforms(canvas.width, canvas.height, sun, sc, state.quality);
@@ -1262,6 +1319,7 @@ const World = (() => {
     });
     window.__halcyon = { state, World };
   }
+  canvas.addEventListener('webglcontextrestored', () => location.reload());
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); ready = false; fail('The GPU reset. Reload to keep exploring.'); $('loader').classList.remove('gone'); });
   if (parallel) {
     const poll = () => {
