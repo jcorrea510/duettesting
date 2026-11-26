@@ -9,7 +9,7 @@ precision highp sampler2D;
 #define PI 3.14159265359
 
 const float PLANET_R = 60000.0;               // sea level radius
-const float HMAX     = 1500.0;                // nothing on the surface rises above PLANET_R + HMAX
+const float HMAX     = 2000.0;                // nothing on the surface rises above PLANET_R + HMAX
 const float ATMO_R   = PLANET_R + 16000.0;    // top of the atmosphere
 const float CLOUD_R  = PLANET_R + 2600.0;     // cloud layer altitude (shell)
 const vec3  SUN_E    = vec3(18.0);            // radiance scale of sunlight (exposure is tuned against this)
@@ -25,6 +25,14 @@ uniform float uExposure;
 uniform int   uQuality;    // 0 fast, 1 normal, 2 photo
 uniform uint  uSeed;
 uniform sampler2D uTransLUT;   // atmosphere transmittance lookup, see atmosphere.js
+
+// The moon keeps a fixed angle from the sun's azimuth (so it rises and sets everywhere). Shared by ocean and extras.
+vec3 moonDirection() {
+  float az = atan(uSunDir.z, uSunDir.x) + 3.88;
+  const float el = -0.119;
+  return vec3(cos(az) * cos(el), sin(el), sin(az) * cos(el));
+}
+#define MOON_DIR moonDirection()
 
 // ---------- hashing ----------
 float hash3(ivec3 p) {

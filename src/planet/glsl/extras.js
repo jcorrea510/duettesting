@@ -29,11 +29,7 @@ const float EXT_MOON_EL  = -0.119;              // moon elevation above the equa
 const float EXT_MOON_AZ  = 3.88;                // moon azimuth relative to the sun (rad)
 const vec3  EXT_MOON_TINT = vec3(0.60, 0.74, 1.0);   // moonlight as the eye sees it at night (Purkinje blue)
 
-vec3 extMoonDir() {
-  float az = atan(uSunDir.z, uSunDir.x) + EXT_MOON_AZ;
-  float ce = cos(EXT_MOON_EL);
-  return vec3(cos(az) * ce, sin(EXT_MOON_EL), sin(az) * ce);
-}
+vec3 extMoonDir() { return moonDirection(); }   // defined in common.js (EXT_MOON_AZ/EL document the values)
 // moonlight irradiance scale (outside the atmosphere), grows with the lit fraction of the disc
 vec3 extMoonE(vec3 md) {
   float k = 0.5 - 0.5 * dot(md, uSunDir);

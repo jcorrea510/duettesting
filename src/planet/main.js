@@ -239,7 +239,7 @@ function sunDir() {
   const a = state.sunAngle, t = state.sunTilt;
   return [Math.cos(a) * Math.cos(t), Math.sin(t), Math.sin(a) * Math.cos(t)];
 }
-const rig = new CameraRig({ canvas, heightAt: (x, y, z) => terrainHeight(x, y, z, 7), R: PLANET_R, sunDir });
+const rig = new CameraRig({ canvas, heightAt: (x, y, z) => terrainHeight(x, y, z, 9), R: PLANET_R, sunDir });
 if (params.cam) rig.setFromHash(params.cam);
 
 // ---------- output size ----------
